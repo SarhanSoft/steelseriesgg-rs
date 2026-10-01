@@ -60,6 +60,10 @@ pub enum Error {
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
 
+    /// The device or platform does not support the requested capability
+    #[error("Not supported: {0}")]
+    Unsupported(String),
+
     /// Unsupported device
     #[error("Unsupported device: vendor={vendor_id:#06x}, product={product_id:#06x}")]
     UnsupportedDevice { vendor_id: u16, product_id: u16 },

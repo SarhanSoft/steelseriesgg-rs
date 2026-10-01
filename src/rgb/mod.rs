@@ -28,6 +28,33 @@ impl Color {
         }
     }
 
+    /// Parse a color name (`red`, `off`, ...) or a hex string (`#ff5500`, `ff5500`).
+    pub fn parse(s: &str) -> Option<Self> {
+        const NAMED: [(&str, Color); 12] = [
+            ("red", Color::RED),
+            ("green", Color::GREEN),
+            ("blue", Color::BLUE),
+            ("white", Color::WHITE),
+            ("black", Color::BLACK),
+            ("off", Color::BLACK),
+            ("cyan", Color::CYAN),
+            ("magenta", Color::MAGENTA),
+            ("yellow", Color::YELLOW),
+            ("orange", Color::ORANGE),
+            ("purple", Color::PURPLE),
+            ("pink", Color::PINK),
+        ];
+        let s = s.trim();
+        if let Some((_, color)) = NAMED.iter().find(|(name, _)| s.eq_ignore_ascii_case(name)) {
+            return Some(*color);
+        }
+        let hex = s.trim_start_matches('#');
+        if hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return u32::from_str_radix(hex, 16).ok().map(Color::from_hex);
+        }
+        None
+    }
+
     /// Convert to hex value.
     pub const fn to_hex(&self) -> u32 {
         ((self.r as u32) << 16) | ((self.g as u32) << 8) | (self.b as u32)

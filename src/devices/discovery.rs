@@ -48,6 +48,10 @@ fn control_score(usage_page: u16, interface_number: i32, product_id: u16, device
         }
         DeviceType::Keyboard => 1,
         DeviceType::Headset => 3,
+        DeviceType::Mouse => match super::mice::model_for_product_id(product_id) {
+            Some(model) => model.interface_number,
+            None => return None,
+        },
         DeviceType::Unknown => return None,
     };
     if interface_number == fallback_interface {
@@ -340,6 +344,11 @@ impl DeviceManager {
         self.devices_by_type(DeviceType::Headset)
     }
 
+    /// Get all mice.
+    pub fn mice(&self) -> Vec<&DeviceInfo> {
+        self.devices_by_type(DeviceType::Mouse)
+    }
+
     /// Get a device by its path.
     pub fn device_by_path(&self, path: &str) -> Option<&DeviceInfo> {
         self.devices.get(path)
@@ -477,6 +486,18 @@ impl DeviceManager {
 
         let hid_device = self.open_device(info)?;
         Ok(Box::new(GenericHeadset::new(info.clone(), hid_device)))
+    }
+
+    /// Open a mouse device and return a boxed Mouse trait object.
+    pub fn open_mouse(&self, info: &DeviceInfo) -> Result<Box<dyn super::mice::Mouse>> {
+        if info.device_type != DeviceType::Mouse {
+            return Err(Error::DeviceCommunication(format!(
+                "Device {} is not a mouse",
+                info.name
+            )));
+        }
+        let hid_device = self.open_device(info)?;
+        super::mice::open(info.clone(), hid_device)
     }
 
     // === Hot-plug monitoring methods ===

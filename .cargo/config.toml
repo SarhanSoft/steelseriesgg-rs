@@ -12,11 +12,11 @@
 [build]
 # rustc-wrapper = "sccache"
 
-# Explicit RUSTFLAGS for all targets. Split-debuginfo=packed keeps debug info
-# in the binary for profiling without bloating release builds further.
-# Remove -Csplit-debuginfo if you are not doing performance profiling.
-# rustflags = ["-Csplit-debuginfo=packed"]
-rustflags = ["-Ctarget-cpu=x86-64-v3"]
+# No global RUSTFLAGS: the default build must link with the system's stock toolchain and run on
+# any x86-64 CPU. A binary built with -Ctarget-cpu=x86-64-v3 dies with SIGILL on CPUs without
+# AVX2/FMA/BMI2 (pre-Haswell Intel, many Atom/Celeron/Pentium chips, older AMD).
+# For a local build tuned to your own machine only:
+# rustflags = ["-Ctarget-cpu=native"]
 
 # ---------------------------------------------------------------------------
 # Linux x86_64
@@ -26,10 +26,11 @@ rustflags = ["-Ctarget-cpu=x86-64-v3"]
 # so -Ctarget-cpu=x86-64-v3 must be repeated here or it silently drops for this target.
 
 # mold (fastest): uncomment if installed
-# rustflags = ["-Ctarget-cpu=x86-64-v3", "-Clink-arg=-fuse-ld=mold"]
+# rustflags = ["-Clink-arg=-fuse-ld=mold"]
 
-# lld (fast): uncomment if installed, comment out mold line above
-rustflags = ["-Ctarget-cpu=x86-64-v3", "-Clink-arg=-fuse-ld=lld"]
+# lld (fast): uncomment if installed, comment out mold line above. Left off by default because
+# linking fails outright ("invalid linker name -fuse-ld=lld") on machines without lld.
+# rustflags = ["-Clink-arg=-fuse-ld=lld"]
 
 # native CPU tuning — faster binary, but NOT portable across machines
 # rustflags = ["-Ctarget-cpu=native", "-Clink-arg=-fuse-ld=lld"]
@@ -48,7 +49,7 @@ linker = "aarch64-linux-gnu-gcc"
 # Not used when building natively on Windows — see x86_64-pc-windows-msvc below.
 # ---------------------------------------------------------------------------
 [target.x86_64-pc-windows-gnu]
-linker = "x86_64-w64-mingw32-clang.exe"
+# Set only when cross-compiling from Linux; a native windows-gnu host uses its own gcc.
 # linker = "x86_64-w64-mingw32-gcc"
 # ar = "x86_64-w64-mingw32-ar"
 
@@ -60,7 +61,7 @@ linker = "x86_64-w64-mingw32-clang.exe"
 # -Z unstable-options" even with RUSTC_BOOTSTRAP=1) — not enabled until stable.
 # ---------------------------------------------------------------------------
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-Ctarget-cpu=x86-64-v3"]
+# rustflags = ["-Ctarget-cpu=native"]
 
 # ---------------------------------------------------------------------------
 # Alias shortcuts
@@ -82,5 +83,5 @@ build-audio  = "build --release --locked --features audio"
 # Build experimental Apex Pro TKL 2023 per-key RGB support
 build-apex23 = "build --release --locked --features experimental-apex-2023"
 
-[env]
-RUSTC_BOOTSTRAP = "1"
+# No [env] RUSTC_BOOTSTRAP: it switched nightly-only code paths on in every dependency's build
+# script, which breaks on compiler updates. Nothing in this project needs unstable features.

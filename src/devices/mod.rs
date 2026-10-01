@@ -7,6 +7,8 @@ pub mod headsets;
 pub mod hid_reports;
 pub mod key_mapping;
 pub mod keyboards;
+pub mod mice;
+pub mod settings;
 pub mod zone_mapping;
 
 use parking_lot::Mutex;
@@ -31,6 +33,7 @@ pub use zone_mapping::{ZoneEffect, ZoneFallback, ZoneInfo, ZoneMapping, ZonePosi
 pub enum DeviceType {
     Keyboard,
     Headset,
+    Mouse,
     Unknown,
 }
 
@@ -39,6 +42,7 @@ impl fmt::Display for DeviceType {
         match self {
             DeviceType::Keyboard => write!(f, "Keyboard"),
             DeviceType::Headset => write!(f, "Headset"),
+            DeviceType::Mouse => write!(f, "Mouse"),
             DeviceType::Unknown => write!(f, "Unknown"),
         }
     }
@@ -552,6 +556,8 @@ pub fn device_type_from_product_id(product_id: u16) -> DeviceType {
         | ARCTIS_NOVA_3_WIRELESS_RX
         | ARCTIS_NOVA_3_WIRELESS_TX => DeviceType::Headset,
 
+        pid if mice::model_for_product_id(pid).is_some() => DeviceType::Mouse,
+
         _ => DeviceType::Unknown,
     }
 }
@@ -607,7 +613,7 @@ pub fn device_name_from_product_id(product_id: u16) -> &'static str {
         ARCTIS_NOVA_PRO_OMNI => "Arctis Nova Pro Omni",
         ARCTIS_NOVA_3_WIRELESS_RX => "Arctis Nova 3 Wireless (RX)",
         ARCTIS_NOVA_3_WIRELESS_TX => "Arctis Nova 3 Wireless (TX)",
-        _ => "Unknown SteelSeries Device",
+        pid => mice::model_for_product_id(pid).map_or("Unknown SteelSeries Device", |m| m.name),
     }
 }
 
