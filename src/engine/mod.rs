@@ -74,14 +74,16 @@ impl DeviceHandle {
     pub fn configurable(&mut self) -> Option<&mut dyn Configurable> {
         match self {
             DeviceHandle::Mouse(mouse) => Some(mouse.as_mut()),
-            DeviceHandle::Keyboard(_) | DeviceHandle::Headset(_) => None,
+            DeviceHandle::Headset(headset) => Some(headset.as_mut()),
+            DeviceHandle::Keyboard(_) => None,
         }
     }
 
     fn descriptors(&self) -> Vec<SettingDescriptor> {
         match self {
             DeviceHandle::Mouse(mouse) => mouse.setting_descriptors(),
-            DeviceHandle::Keyboard(_) | DeviceHandle::Headset(_) => Vec::new(),
+            DeviceHandle::Headset(headset) => headset.setting_descriptors(),
+            DeviceHandle::Keyboard(_) => Vec::new(),
         }
     }
 

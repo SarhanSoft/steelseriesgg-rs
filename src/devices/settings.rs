@@ -330,7 +330,8 @@ pub fn find_descriptor<'a>(descriptors: &'a [SettingDescriptor], id: &str) -> Op
     descriptors.iter().find(|d| d.id == id)
 }
 
-/// ChatMix dial position, as two volumes that always sum to roughly 100.
+/// ChatMix dial position as the headset reports it: one volume per side, 0-100 each. At the
+/// dial's centre both are 100; turning it lowers the opposite side.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChatMix {
     /// Game channel volume, 0-100.

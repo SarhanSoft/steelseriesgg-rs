@@ -573,7 +573,7 @@ mod tests {
             APEX_PRO_MINI_WIRELESS,
             APEX_PRO_MINI_WIRELESS_DONGLE,
             APEX_PRO_MINI_2024,
-            ARCTIS_NOVA_PRO,
+            ARCTIS_NOVA_PRO_WIRELESS,
             0xFFFF,
         ];
         for pid in without_screen {
