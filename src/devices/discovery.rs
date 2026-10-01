@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, mpsc};
 use tracing::{debug, info, warn};
 
-use super::headsets::{GenericHeadset, Headset};
+use super::headsets::{Headset, HeadsetModel};
 use super::hid_reports::ConnectionHealth;
 use super::keyboards::apex::Apex3Tkl;
 use super::keyboards::apex_pro_tkl_2023::ApexProTkl2023;
@@ -33,6 +33,11 @@ use crate::{Error, Result, STEELSERIES_VENDOR_ID};
 ///    (kept as a fallback since the wireless PIDs are unverified against this ranking).
 /// 4. Standard OS-facing pages (Generic Desktop `0x0001`, Consumer `0x000C`) never qualify.
 fn control_score(usage_page: u16, interface_number: i32, product_id: u16, device_type: DeviceType) -> Option<u32> {
+    if device_type == DeviceType::Headset
+        && let Some(model) = super::headsets::model_for_product_id(product_id)
+    {
+        return headset_control_score(model, usage_page, interface_number);
+    }
     if usage_page == STEELSERIES_CONTROL_USAGE_PAGE {
         return Some(3_000_000 - interface_number.max(0) as u32);
     }
@@ -48,10 +53,7 @@ fn control_score(usage_page: u16, interface_number: i32, product_id: u16, device
         }
         DeviceType::Keyboard => 1,
         DeviceType::Headset => 3,
-        DeviceType::Mouse => match super::mice::model_for_product_id(product_id) {
-            Some(model) => model.interface_number,
-            None => return None,
-        },
+        DeviceType::Mouse => super::mice::model_for_product_id(product_id)?.interface_number,
         DeviceType::Unknown => return None,
     };
     if interface_number == fallback_interface {
@@ -59,6 +61,22 @@ fn control_score(usage_page: u16, interface_number: i32, product_id: u16, device
     } else {
         None
     }
+}
+
+/// Score a HID collection of a known headset model. Only the model's control interface
+/// qualifies, since headsets put vendor-defined pages on several interfaces (HeadsetControl
+/// names one interface per model). On that interface the model's usage page wins, then any
+/// vendor-defined page, then anything else (Linux exposes one hidraw node per interface, so all
+/// collections there share one path).
+fn headset_control_score(model: &HeadsetModel, usage_page: u16, interface_number: i32) -> Option<u32> {
+    if interface_number != model.interface_number {
+        return None;
+    }
+    Some(match model.usage_page {
+        Some(page) if page == usage_page => 3_000_000,
+        _ if usage_page >= 0xFF00 => 2_000_000,
+        _ => 1_000_000,
+    })
 }
 
 /// Pick one representative `DeviceInfo` per physical device of `device_type` from `devices`,
@@ -485,7 +503,7 @@ impl DeviceManager {
         }
 
         let hid_device = self.open_device(info)?;
-        Ok(Box::new(GenericHeadset::new(info.clone(), hid_device)))
+        super::headsets::open(info.clone(), hid_device)
     }
 
     /// Open a mouse device and return a boxed Mouse trait object.
@@ -1002,6 +1020,27 @@ mod tests {
             control_score(0x0001, 1, APEX_PRO_TKL_2023_WIRELESS, DeviceType::Keyboard),
             None
         );
+    }
+
+    #[test]
+    fn test_headset_control_score_uses_model_interface_and_page() {
+        use crate::devices::product_ids::{ARCTIS_7, ARCTIS_NOVA_3, ARCTIS_NOVA_7};
+
+        // Nova 7: interface 3, usage page 0xFFC0.
+        let named_page = control_score(0xFFC0, 3, ARCTIS_NOVA_7, DeviceType::Headset).unwrap();
+        let other_vendor = control_score(0xFF00, 3, ARCTIS_NOVA_7, DeviceType::Headset).unwrap();
+        let consumer = control_score(0x000C, 3, ARCTIS_NOVA_7, DeviceType::Headset).unwrap();
+        assert!(named_page > other_vendor && other_vendor > consumer);
+        // A vendor page on any other interface never qualifies for a headset.
+        assert_eq!(control_score(0xFFC0, 4, ARCTIS_NOVA_7, DeviceType::Headset), None);
+
+        // Nova 3 uses interface 4.
+        assert!(control_score(0xFFC0, 4, ARCTIS_NOVA_3, DeviceType::Headset).is_some());
+        assert_eq!(control_score(0xFFC0, 3, ARCTIS_NOVA_3, DeviceType::Headset), None);
+
+        // Arctis 7: interface 5, no usage page named by the reference.
+        assert!(control_score(0x000C, 5, ARCTIS_7, DeviceType::Headset).is_some());
+        assert_eq!(control_score(0xFFC0, 3, ARCTIS_7, DeviceType::Headset), None);
     }
 
     #[test]
