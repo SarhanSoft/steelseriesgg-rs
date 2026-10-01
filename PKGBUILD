@@ -9,8 +9,20 @@ pkgdesc="A complete open-source SteelSeries GG replacement for Linux - RGB light
 arch=('x86_64')
 url="https://github.com/Ven0m0/steelseriesgg-rs"
 license=('MIT')
-depends=('hidapi' 'glibc' 'systemd')
+# hidapi is not a dependency: the Linux build uses hidapi's pure-Rust hidraw backend.
+depends=('glibc' 'gcc-libs' 'systemd')
 makedepends=('rust')
+optdepends=(
+  'pipewire: Sonar-style audio mixer (virtual Game/Chat/Media/Aux/Mic devices)'
+  'pipewire-pulse: provides pactl-compatible control used by the mixer'
+  'libpulse: pactl command used by the mixer'
+  'wireplumber: wpctl volume control used by the mixer'
+  'noise-suppression-for-voice: RNNoise microphone noise suppression'
+  'gpu-screen-recorder: Moments (instant replay clips)'
+  'playerctl: now-playing screen on OLED keyboards'
+  'libnotify: desktop notifications (battery low, profile switched)'
+  'xdg-utils: open the control panel in a browser'
+)
 install=ssgg.install
 source=(
   "$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
@@ -67,7 +79,9 @@ package() {
   cd "$(_resolve_archive_dir)" || return 1
   install -Dm755 "$srcdir/target/release/ssgg" "$pkgdir/usr/bin/ssgg"
   install -Dm644 assets/ssgg.service "$pkgdir/usr/lib/systemd/user/ssgg.service"
-  install -Dm644 assets/99-steelseries.rules "$pkgdir/usr/lib/udev/rules.d/99-steelseries.rules"
+  install -Dm644 assets/70-steelseries.rules "$pkgdir/usr/lib/udev/rules.d/70-steelseries.rules"
+  install -Dm644 assets/ssgg-uinput.conf "$pkgdir/usr/lib/modules-load.d/ssgg-uinput.conf"
+  install -Dm644 assets/ssgg.desktop "$pkgdir/usr/share/applications/ssgg.desktop"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

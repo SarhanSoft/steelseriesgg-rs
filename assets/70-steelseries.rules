@@ -1,0 +1,18 @@
+# /usr/lib/udev/rules.d/70-steelseries.rules
+# Access to SteelSeries devices for ssgg without root.
+#
+# TAG+="uaccess" grants the user logged in at the local seat access; it only works from a rules
+# file that sorts before 73-seat-late.rules, hence the 70- prefix. GROUP="input" is the fallback
+# for a daemon running without an active seat (e.g. lingering user service at boot).
+
+# HID control endpoints (lighting, OLED, settings, battery) — every SteelSeries product.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", TAG+="uaccess", GROUP="input", MODE="0660"
+
+# Raw USB nodes, used by tools that talk to the device without hidraw.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", TAG+="uaccess", GROUP="input", MODE="0660"
+
+# Key bindings and macros: read SteelSeries keyboard/mouse event nodes and grab them...
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="1038", TAG+="uaccess"
+
+# ...and re-emit through a virtual device.
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=SteelSeries GG
+GenericName=Peripheral Control Panel
+Comment=Lighting, settings, audio mixer and profiles for SteelSeries devices
+Exec=ssgg ui
+Icon=input-gaming
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=steelseries;rgb;keyboard;mouse;headset;sonar;

@@ -1,13 +1,15 @@
 [Unit]
 Description=SteelSeries GG daemon for Linux
 Documentation=https://github.com/Ven0m0/steelseriesgg-rs
-After=systemd-udevd.service
+# The audio mixer drives PipeWire; start after it when present (no hard dependency).
+After=pipewire.service pipewire-pulse.service wireplumber.service
 
 [Service]
 Type=simple
 ExecStart=/usr/bin/ssgg daemon
 Restart=on-failure
 RestartSec=5
+Environment=RUST_LOG=info
 
 [Install]
 WantedBy=default.target

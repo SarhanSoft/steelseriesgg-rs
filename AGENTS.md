@@ -67,7 +67,7 @@ src/bin/sonar_control.rs               Sonar HTTP API exerciser (feature `sonar`
 ### Assets and tests
 
 ```
-assets/99-steelseries.rules            udev rules (deploy to udev rules.d on target system)
+assets/70-steelseries.rules            udev rules (uaccess; must sort before 73-seat-late.rules)
 assets/ssgg.service                    systemd user unit
 docs/development/                      Protocol reverse-engineering notes (historical)
 tests/                                 Integration tests (cors_security, device_readback)
