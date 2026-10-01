@@ -81,6 +81,47 @@ enum Commands {
     /// Open the control panel in a browser (needs the daemon)
     Ui,
 
+    /// Sonar-style audio mixer: Game/Chat/Media/Aux/Microphone devices, EQ, ChatMix, routing
+    Mixer {
+        #[command(subcommand)]
+        action: Option<cli::extras::MixerAction>,
+    },
+
+    /// Rebind a key or mouse button, e.g. `ssgg bind capslock key ctrl`, `ssgg bind f13 text "gg"`
+    Bind {
+        /// Key or button: capslock, f13, mouse4, KEY_A, BTN_SIDE...
+        key: String,
+        /// key <k> | combo <a+b> | text <...> | launch <cmd...> | media <m> | mouse <b> |
+        /// profile <name> | macro <tap:K delay:ms ...> | disabled
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+        action: Vec<String>,
+        /// Profile to edit (default: the active one)
+        #[arg(long)]
+        profile: Option<String>,
+        /// Fire when the key is released instead of pressed
+        #[arg(long)]
+        on_release: bool,
+    },
+
+    /// Give a key back its normal function
+    Unbind {
+        key: String,
+        #[arg(long)]
+        profile: Option<String>,
+    },
+
+    /// List key bindings
+    Bindings {
+        #[arg(long)]
+        profile: Option<String>,
+    },
+
+    /// Record a macro from your SteelSeries keyboard/mouse and bind it to a key
+    Macro {
+        #[command(subcommand)]
+        action: MacroAction,
+    },
+
     /// Keyboard OLED screen: text, images, clock, system stats, now playing
     Oled {
         #[command(subcommand)]
@@ -295,6 +336,23 @@ enum RgbAction {
     Perkey {
         #[command(subcommand)]
         action: PerKeyAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum MacroAction {
+    /// Record key presses until the stop key, then bind them to KEY
+    Record {
+        /// Key that will play the macro
+        key: String,
+        /// Key that ends recording (default Esc; it is not recorded)
+        #[arg(long)]
+        stop_key: Option<String>,
+        /// Give up after this many seconds
+        #[arg(long, default_value = "30")]
+        timeout: u32,
+        #[arg(long)]
+        profile: Option<String>,
     },
 }
 
@@ -742,6 +800,31 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Set { device, setting, value } => cli::set(device, setting, value).await?,
 
         Commands::Ui => cli::open_ui().await?,
+
+        Commands::Mixer { action } => {
+            cli::extras::mixer(action.unwrap_or(cli::extras::MixerAction::Status)).await?;
+        }
+
+        Commands::Bind {
+            key,
+            action,
+            profile,
+            on_release,
+        } => cli::extras::bind(key, action, profile, on_release).await?,
+
+        Commands::Unbind { key, profile } => cli::extras::unbind(key, profile).await?,
+
+        Commands::Bindings { profile } => cli::extras::bindings(profile).await?,
+
+        Commands::Macro {
+            action:
+                MacroAction::Record {
+                    key,
+                    stop_key,
+                    timeout,
+                    profile,
+                },
+        } => cli::extras::record_macro(key, stop_key, timeout, profile).await?,
 
         Commands::Oled { action } => {
             use steelseries_gg::engine::Command;

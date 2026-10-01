@@ -2,6 +2,7 @@
 //! sent to the running daemon when there is one and executed in-process otherwise.
 
 pub mod daemon;
+pub mod extras;
 
 use colored::Colorize;
 use serde_json::Value;
