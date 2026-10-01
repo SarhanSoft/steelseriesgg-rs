@@ -309,7 +309,9 @@ impl ZoneFallback {
         apex_3.add_zone(ZonePosition::Underglow, "Underglow".to_string(), false, 10);
         self.mappings.insert(product_ids::APEX_3, apex_3);
 
-        // Apex 3 TKL - Enhanced 9-zone mapping
+        // Apex 3 TKL - 8 zones ([EXPERIMENTAL] count from OpenRGB `STEELSERIES_8Z_LED_COUNT`; OpenRGB
+        // names them "LED 0".."LED 7", so the names and positions below are this crate's
+        // approximation, kept for the per-key simulation).
         let mut apex_3_tkl = ZoneMapping::new(product_ids::APEX_3_TKL, "Apex 3 TKL".to_string());
         apex_3_tkl.add_zone(ZonePosition::FunctionRow, "Function Keys".to_string(), false, 13);
         apex_3_tkl.add_zone(ZonePosition::MainKeys, "Main Keys Left".to_string(), true, 18);
@@ -324,19 +326,40 @@ impl ZoneFallback {
             6,
         );
         apex_3_tkl.add_zone(ZonePosition::ArrowKeys, "Arrow Keys".to_string(), false, 4);
-        apex_3_tkl.add_zone(ZonePosition::Underglow, "Underglow".to_string(), false, 8);
         self.mappings.insert(product_ids::APEX_3_TKL, apex_3_tkl);
+
+        // Old Apex / Apex 350 - 5 zones in wire order ([EXPERIMENTAL] OpenRGB
+        // `RGBController_SteelSeriesOldApex`).
+        let mut old_apex = ZoneMapping::new(product_ids::APEX_OG, "Apex (OG)".to_string());
+        old_apex.add_zone(ZonePosition::MainKeys, "QWERTY".to_string(), true, 1);
+        old_apex.add_zone(ZonePosition::Numpad, "TenKey".to_string(), false, 1);
+        old_apex.add_zone(ZonePosition::FunctionRow, "FunctionKeys".to_string(), false, 1);
+        old_apex.add_zone(ZonePosition::Custom(0), "MXKeys".to_string(), false, 1);
+        old_apex.add_zone(ZonePosition::Logo, "Logo".to_string(), false, 1);
+        let mut apex_350 = old_apex.clone();
+        apex_350.product_id = product_ids::APEX_350;
+        apex_350.name = "Apex 350".to_string();
+        self.mappings.insert(product_ids::APEX_OG, old_apex);
+        self.mappings.insert(product_ids::APEX_350, apex_350);
 
         // Generic single-zone fallback for other keyboards
         let mut generic = ZoneMapping::new(0, "Generic Single Zone".to_string());
         generic.add_zone(ZonePosition::MainKeys, "All Keys".to_string(), true, 50);
-        // Add mappings for single-zone keyboards
+        // Add mappings for single-zone keyboards (the per-key boards: one zone = the whole board)
         for &product_id in &[
             product_ids::APEX_PRO,
             product_ids::APEX_PRO_TKL,
             product_ids::APEX_5,
             product_ids::APEX_7,
             product_ids::APEX_7_TKL,
+            product_ids::APEX_9_TKL,
+            product_ids::APEX_9_MINI,
+            product_ids::APEX_PRO_MINI,
+            product_ids::APEX_PRO_MINI_WIRELESS_DONGLE,
+            product_ids::APEX_PRO_MINI_WIRELESS,
+            product_ids::APEX_PRO_2024,
+            product_ids::APEX_PRO_MINI_2024,
+            product_ids::APEX_M750,
         ] {
             let mut mapping = generic.clone();
             mapping.product_id = product_id;
@@ -496,6 +519,16 @@ impl ZoneFallback {
             KeyId::Space => ZonePosition::MainKeys, // Space bar typically in main area
             KeyId::SteelSeriesKey => ZonePosition::Logo,
             KeyId::VolumeWheel => ZonePosition::Logo,
+
+            KeyId::PrintScreen | KeyId::ScrollLock | KeyId::Pause => ZonePosition::NavigationCluster,
+            KeyId::NonUsHash
+            | KeyId::NonUsBackslash
+            | KeyId::JpRo
+            | KeyId::JpKana
+            | KeyId::JpYen
+            | KeyId::JpHenkan
+            | KeyId::JpMuhenkan => ZonePosition::MainKeys,
+            KeyId::MediaPlayPause => ZonePosition::Logo,
         };
 
         mapping.find_zone_by_position(position)

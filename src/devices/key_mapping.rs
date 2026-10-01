@@ -133,6 +133,23 @@ pub enum KeyId {
     // SteelSeries specific keys
     SteelSeriesKey, // The SteelSeries logo key
     VolumeWheel,    // Volume wheel (if applicable)
+
+    // Further LEDs of the OpenRGB Apex LED table (`led_names`, SteelSeriesApexRegions.h)
+    PrintScreen,
+    ScrollLock,
+    Pause,
+    /// ISO `#` key next to Enter (HID 0x32).
+    NonUsHash,
+    /// ISO `\` key next to left Shift (HID 0x64).
+    NonUsBackslash,
+    /// Japanese layout keys (HID 0x87-0x8B).
+    JpRo,
+    JpKana,
+    JpYen,
+    JpHenkan,
+    JpMuhenkan,
+    /// Media key LED of the TKL boards (HID 0xFB), where full-size boards have Pause.
+    MediaPlayPause,
 }
 
 impl fmt::Display for KeyId {
@@ -258,9 +275,400 @@ impl fmt::Display for KeyId {
             // Special
             KeyId::SteelSeriesKey => write!(f, "SS"),
             KeyId::VolumeWheel => write!(f, "VOL"),
+
+            KeyId::PrintScreen => write!(f, "PRTSC"),
+            KeyId::ScrollLock => write!(f, "SCRLK"),
+            KeyId::Pause => write!(f, "PAUSE"),
+            KeyId::NonUsHash => write!(f, "ISO#"),
+            KeyId::NonUsBackslash => write!(f, "ISO\\"),
+            KeyId::JpRo => write!(f, "RO"),
+            KeyId::JpKana => write!(f, "KANA"),
+            KeyId::JpYen => write!(f, "YEN"),
+            KeyId::JpHenkan => write!(f, "HENKAN"),
+            KeyId::JpMuhenkan => write!(f, "MUHENKAN"),
+            KeyId::MediaPlayPause => write!(f, "MEDIA"),
         }
     }
 }
+
+/// [EXPERIMENTAL] The Apex per-key LED table: `(key, HID usage)` in LED-index order.
+///
+/// Reference: OpenRGB `SteelSeriesApexController.cpp` (`keys[]`, the HID usage sent for each
+/// LED) and `SteelSeriesApexRegions.h` (`led_names[]`, the key at each LED index). Both lists
+/// have 112 entries in the same order. Every model of the Apex 5/7/9/Pro family receives the
+/// whole table; OpenRGB notes that the firmware ignores keys a model does not have.
+pub const APEX_LED_TABLE: [(KeyId, u8); 112] = [
+    (KeyId::A, 0x04),
+    (KeyId::B, 0x05),
+    (KeyId::C, 0x06),
+    (KeyId::D, 0x07),
+    (KeyId::E, 0x08),
+    (KeyId::F, 0x09),
+    (KeyId::G, 0x0A),
+    (KeyId::H, 0x0B),
+    (KeyId::I, 0x0C),
+    (KeyId::J, 0x0D),
+    (KeyId::K, 0x0E),
+    (KeyId::L, 0x0F),
+    (KeyId::M, 0x10),
+    (KeyId::N, 0x11),
+    (KeyId::O, 0x12),
+    (KeyId::P, 0x13),
+    (KeyId::Q, 0x14),
+    (KeyId::R, 0x15),
+    (KeyId::S, 0x16),
+    (KeyId::T, 0x17),
+    (KeyId::U, 0x18),
+    (KeyId::V, 0x19),
+    (KeyId::W, 0x1A),
+    (KeyId::X, 0x1B),
+    (KeyId::Y, 0x1C),
+    (KeyId::Z, 0x1D),
+    (KeyId::Key1, 0x1E),
+    (KeyId::Key2, 0x1F),
+    (KeyId::Key3, 0x20),
+    (KeyId::Key4, 0x21),
+    (KeyId::Key5, 0x22),
+    (KeyId::Key6, 0x23),
+    (KeyId::Key7, 0x24),
+    (KeyId::Key8, 0x25),
+    (KeyId::Key9, 0x26),
+    (KeyId::Key0, 0x27),
+    (KeyId::Enter, 0x28),
+    (KeyId::Escape, 0x29),
+    (KeyId::Backspace, 0x2A),
+    (KeyId::Tab, 0x2B),
+    (KeyId::Space, 0x2C),
+    (KeyId::Minus, 0x2D),
+    (KeyId::Equal, 0x2E),
+    (KeyId::LeftBracket, 0x2F),
+    (KeyId::RightBracket, 0x30),
+    (KeyId::NonUsHash, 0x32),
+    (KeyId::Semicolon, 0x33),
+    (KeyId::Quote, 0x34),
+    (KeyId::Backtick, 0x35),
+    (KeyId::Comma, 0x36),
+    (KeyId::Period, 0x37),
+    (KeyId::Slash, 0x38),
+    (KeyId::CapsLock, 0x39),
+    (KeyId::F1, 0x3A),
+    (KeyId::F2, 0x3B),
+    (KeyId::F3, 0x3C),
+    (KeyId::F4, 0x3D),
+    (KeyId::F5, 0x3E),
+    (KeyId::F6, 0x3F),
+    (KeyId::F7, 0x40),
+    (KeyId::F8, 0x41),
+    (KeyId::F9, 0x42),
+    (KeyId::F10, 0x43),
+    (KeyId::F11, 0x44),
+    (KeyId::F12, 0x45),
+    (KeyId::PrintScreen, 0x46),
+    (KeyId::ScrollLock, 0x47),
+    (KeyId::Pause, 0x48),
+    (KeyId::Insert, 0x49),
+    (KeyId::Home, 0x4A),
+    (KeyId::PageUp, 0x4B),
+    (KeyId::Delete, 0x4C),
+    (KeyId::End, 0x4D),
+    (KeyId::PageDown, 0x4E),
+    (KeyId::ArrowRight, 0x4F),
+    (KeyId::ArrowLeft, 0x50),
+    (KeyId::ArrowDown, 0x51),
+    (KeyId::ArrowUp, 0x52),
+    (KeyId::NonUsBackslash, 0x64),
+    (KeyId::LeftCtrl, 0xE0),
+    (KeyId::LeftShift, 0xE1),
+    (KeyId::LeftAlt, 0xE2),
+    (KeyId::LeftWin, 0xE3),
+    (KeyId::RightCtrl, 0xE4),
+    (KeyId::RightShift, 0xE5),
+    (KeyId::RightAlt, 0xE6),
+    (KeyId::RightWin, 0xE7),
+    // OpenRGB names this LED `KEY_EN_RIGHT_FUNCTION`: the SteelSeries / Fn key.
+    (KeyId::SteelSeriesKey, 0xF0),
+    (KeyId::Backslash, 0x31),
+    (KeyId::JpRo, 0x87),
+    (KeyId::JpKana, 0x88),
+    (KeyId::JpYen, 0x89),
+    (KeyId::JpHenkan, 0x8A),
+    (KeyId::JpMuhenkan, 0x8B),
+    (KeyId::NumLock, 0x53),
+    (KeyId::NumSlash, 0x54),
+    (KeyId::NumAsterisk, 0x55),
+    (KeyId::NumMinus, 0x56),
+    (KeyId::NumPlus, 0x57),
+    (KeyId::NumEnter, 0x58),
+    (KeyId::Num1, 0x59),
+    (KeyId::Num2, 0x5A),
+    (KeyId::Num3, 0x5B),
+    (KeyId::Num4, 0x5C),
+    (KeyId::Num5, 0x5D),
+    (KeyId::Num6, 0x5E),
+    (KeyId::Num7, 0x5F),
+    (KeyId::Num8, 0x60),
+    (KeyId::Num9, 0x61),
+    (KeyId::Num0, 0x62),
+    (KeyId::NumPeriod, 0x63),
+    (KeyId::MediaPlayPause, 0xFB),
+];
+
+/// Number of LEDs in [`APEX_LED_TABLE`].
+pub const APEX_LED_COUNT: usize = APEX_LED_TABLE.len();
+
+const NO_LED: u8 = u8::MAX;
+
+const fn build_hid_to_led() -> [u8; 256] {
+    let mut table = [NO_LED; 256];
+    let mut i = 0;
+    while i < APEX_LED_COUNT {
+        table[APEX_LED_TABLE[i].1 as usize] = i as u8;
+        i += 1;
+    }
+    table
+}
+
+const APEX_HID_TO_LED: [u8; 256] = build_hid_to_led();
+
+/// LED index of a HID usage in [`APEX_LED_TABLE`].
+pub const fn apex_led_index_for_hid(hid_code: u8) -> Option<usize> {
+    match APEX_HID_TO_LED[hid_code as usize] {
+        NO_LED => None,
+        index => Some(index as usize),
+    }
+}
+
+/// LED index of a key in [`APEX_LED_TABLE`].
+pub fn apex_led_index(key: KeyId) -> Option<usize> {
+    APEX_LED_TABLE.iter().position(|(k, _)| *k == key)
+}
+
+/// Physical form factor of an Apex per-key board.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ApexFormFactor {
+    /// Full size with numpad (OpenRGB `MATRIX_MAP_ANSI`).
+    FullSize,
+    /// Tenkeyless (`apex_tkl_us_region_patch`).
+    TenKeyLess,
+    /// 60 % (`apex_mini_us_region_patch`).
+    Mini,
+}
+
+impl ApexFormFactor {
+    /// Matching [`KeyboardLayout`].
+    pub const fn layout(self) -> KeyboardLayout {
+        match self {
+            Self::FullSize => KeyboardLayout::FullSize,
+            Self::TenKeyLess => KeyboardLayout::TenKeyLess,
+            Self::Mini => KeyboardLayout::Compact,
+        }
+    }
+
+    /// Whether the LED at `led_index` of [`APEX_LED_TABLE`] belongs to this form factor.
+    ///
+    /// The full-size set is every LED in OpenRGB's ANSI matrix. The TKL set removes Print
+    /// Screen, Scroll Lock and the numpad and puts the media LED in Pause's place. The mini set
+    /// further removes the F-row, the backtick (Escape takes its place), the navigation block,
+    /// the arrows and the media LED. The ISO and Japanese keys (`apex_iso_region_patch`,
+    /// `apex_jp_region_patch`) are included in every set: OpenRGB picks the region from the
+    /// serial number, which this crate does not read, and the firmware ignores absent keys.
+    pub fn has_led(self, led_index: usize) -> bool {
+        let Some((key, _)) = APEX_LED_TABLE.get(led_index) else {
+            return false;
+        };
+        let numpad = (94..=110).contains(&led_index);
+        match self {
+            Self::FullSize => *key != KeyId::MediaPlayPause,
+            Self::TenKeyLess => !numpad && !matches!(key, KeyId::PrintScreen | KeyId::ScrollLock | KeyId::Pause),
+            Self::Mini => {
+                Self::TenKeyLess.has_led(led_index)
+                    && !(53..=64).contains(&led_index)
+                    && !(68..=77).contains(&led_index)
+                    && !matches!(key, KeyId::Backtick | KeyId::MediaPlayPause)
+            }
+        }
+    }
+
+    /// LED indices of this form factor, ascending.
+    pub fn led_indices(self) -> Vec<usize> {
+        (0..APEX_LED_COUNT).filter(|&i| self.has_led(i)).collect()
+    }
+}
+
+/// [EXPERIMENTAL] Form factor of each Apex per-key product ID.
+///
+/// OpenRGB models: full-size Apex 5, Apex 7, Apex Pro, Apex Pro 3 (`0x1640`); TKL Apex 7 TKL,
+/// Apex 9 TKL, Apex Pro TKL and the 2023 / Gen 3 TKL models; mini Apex 9 Mini. The Apex Pro Mini
+/// PIDs (`0x161E`, `0x1624`, `0x1626`, `0x1648`) are not detected by OpenRGB; their form factor
+/// comes from the Pro Mini SKUs in `SteelSeriesApexRegions.h`.
+pub fn apex_form_factor(product_id: u16) -> Option<ApexFormFactor> {
+    use product_ids::*;
+    Some(match product_id {
+        APEX_PRO | APEX_7 | APEX_5 | APEX_PRO_2024 => ApexFormFactor::FullSize,
+        APEX_PRO_TKL
+        | APEX_7_TKL
+        | APEX_9_TKL
+        | APEX_PRO_TKL_2023
+        | APEX_PRO_TKL_2023_WIRELESS
+        | APEX_PRO_TKL_2023_WIRELESS_2
+        | APEX_PRO_TKL_2024
+        | APEX_PRO_TKL_WIRELESS_2024_DONGLE
+        | APEX_PRO_TKL_WIRELESS_2024 => ApexFormFactor::TenKeyLess,
+        APEX_9_MINI | APEX_PRO_MINI | APEX_PRO_MINI_WIRELESS_DONGLE | APEX_PRO_MINI_WIRELESS | APEX_PRO_MINI_2024 => {
+            ApexFormFactor::Mini
+        }
+        _ => return None,
+    })
+}
+
+/// [EXPERIMENTAL] Apex M750 direct-frame slots: 6 rows of 22, bottom row first.
+///
+/// Reference: OpenRGB `SteelSeriesApexMController.cpp` (`keys_m`). The slot positions and their
+/// key labels are taken from that table's comments. Its numpad indices predate the Japanese keys
+/// in OpenRGB's current LED list and point five LEDs too low, so keys are matched by label here.
+pub const APEX_M750_GRID: [Option<KeyId>; 132] = {
+    use KeyId::*;
+    [
+        // LCTRL LWIN LALT - SPACE - - - - RALT RWIN FN RCTRL - - LEFT DOWN RIGHT - #0 - #.
+        Some(LeftCtrl),
+        Some(LeftWin),
+        Some(LeftAlt),
+        None,
+        Some(Space),
+        None,
+        None,
+        None,
+        None,
+        Some(RightAlt),
+        Some(RightWin),
+        Some(SteelSeriesKey),
+        Some(RightCtrl),
+        None,
+        None,
+        Some(ArrowLeft),
+        Some(ArrowDown),
+        Some(ArrowRight),
+        None,
+        Some(Num0),
+        None,
+        Some(NumPeriod),
+        // LSHFT Z X C V B N M , . / - RSHFT - - - UP - #1 #2 #3 #ENTR
+        Some(LeftShift),
+        Some(Z),
+        Some(X),
+        Some(C),
+        Some(V),
+        Some(B),
+        Some(N),
+        Some(M),
+        Some(Comma),
+        Some(Period),
+        Some(Slash),
+        None,
+        Some(RightShift),
+        None,
+        None,
+        None,
+        Some(ArrowUp),
+        None,
+        Some(Num1),
+        Some(Num2),
+        Some(Num3),
+        Some(NumEnter),
+        // CAPLK A S D F G H J K L ; ' - ENTER - - - - #4 #5 #6 -
+        Some(CapsLock),
+        Some(A),
+        Some(S),
+        Some(D),
+        Some(F),
+        Some(G),
+        Some(H),
+        Some(J),
+        Some(K),
+        Some(L),
+        Some(Semicolon),
+        Some(Quote),
+        None,
+        Some(Enter),
+        None,
+        None,
+        None,
+        None,
+        Some(Num4),
+        Some(Num5),
+        Some(Num6),
+        None,
+        // TAB Q W E R T Y U I O P [ ] - \ DEL END PGDN #7 #8 #9 #+
+        Some(Tab),
+        Some(Q),
+        Some(W),
+        Some(E),
+        Some(R),
+        Some(T),
+        Some(Y),
+        Some(U),
+        Some(I),
+        Some(O),
+        Some(P),
+        Some(LeftBracket),
+        Some(RightBracket),
+        None,
+        Some(Backslash),
+        Some(Delete),
+        Some(End),
+        Some(PageDown),
+        Some(Num7),
+        Some(Num8),
+        Some(Num9),
+        Some(NumPlus),
+        // ` 1 2 3 4 5 6 7 8 9 0 - = - BKSPC INS HOME PGUP NUMLK #/ #* #-
+        Some(Backtick),
+        Some(Key1),
+        Some(Key2),
+        Some(Key3),
+        Some(Key4),
+        Some(Key5),
+        Some(Key6),
+        Some(Key7),
+        Some(Key8),
+        Some(Key9),
+        Some(Key0),
+        Some(Minus),
+        Some(Equal),
+        None,
+        Some(Backspace),
+        Some(Insert),
+        Some(Home),
+        Some(PageUp),
+        Some(NumLock),
+        Some(NumSlash),
+        Some(NumAsterisk),
+        Some(NumMinus),
+        // ESC F1 F2 F3 F4 - F5 F6 F7 F8 - F9 F10 F11 F12 PRTSC SCRLK PAUSE - - - -
+        Some(Escape),
+        Some(F1),
+        Some(F2),
+        Some(F3),
+        Some(F4),
+        None,
+        Some(F5),
+        Some(F6),
+        Some(F7),
+        Some(F8),
+        None,
+        Some(F9),
+        Some(F10),
+        Some(F11),
+        Some(F12),
+        Some(PrintScreen),
+        Some(ScrollLock),
+        Some(Pause),
+        None,
+        None,
+        None,
+        None,
+    ]
+};
 
 /// HID address for a specific key (USB HID Usage ID).
 ///
@@ -428,11 +836,77 @@ impl KeyMappingDatabase {
         // Apex Pro TKL (2023) - Verified HID codes from SteelSeries GG
         self.add_apex_pro_tkl_2023_mapping();
 
-        // Apex Pro (full) - Verified HID codes from SteelSeries GG
-        self.add_apex_pro_full_mapping();
+        // Every other Apex per-key model, from the OpenRGB LED table.
+        self.add_openrgb_apex_mappings();
+        self.add_apex_m750_mapping();
+    }
 
-        // Apex Pro TKL (original) - Verified HID codes from SteelSeries GG
-        self.add_apex_pro_tkl_mapping();
+    /// [EXPERIMENTAL] Mappings built from [`APEX_LED_TABLE`] for every per-key PID except the
+    /// Apex Pro TKL (2023), which keeps its GG-derived mapping above.
+    ///
+    /// These replace the earlier GG-derived Apex Pro mapping and the empty Apex Pro TKL
+    /// placeholder. The HID usages are the same; the differences are that OpenRGB lists no Menu
+    /// key on these boards (the key beside right Win is the SteelSeries key, `0xF0`) and adds
+    /// Print Screen, Scroll Lock, Pause, the media LED and the ISO / Japanese keys.
+    fn add_openrgb_apex_mappings(&mut self) {
+        use product_ids::*;
+        let pids = [
+            APEX_PRO,
+            APEX_7,
+            APEX_5,
+            APEX_PRO_2024,
+            APEX_PRO_TKL,
+            APEX_7_TKL,
+            APEX_9_TKL,
+            APEX_PRO_TKL_2023_WIRELESS,
+            APEX_PRO_TKL_2023_WIRELESS_2,
+            APEX_PRO_TKL_2024,
+            APEX_PRO_TKL_WIRELESS_2024_DONGLE,
+            APEX_PRO_TKL_WIRELESS_2024,
+            APEX_9_MINI,
+            APEX_PRO_MINI,
+            APEX_PRO_MINI_WIRELESS_DONGLE,
+            APEX_PRO_MINI_WIRELESS,
+            APEX_PRO_MINI_2024,
+        ];
+        for pid in pids {
+            let Some(form_factor) = apex_form_factor(pid) else {
+                continue;
+            };
+            let indices = form_factor.led_indices();
+            let hid_codes = indices.iter().map(|&i| APEX_LED_TABLE[i].1).collect();
+            let mut mapping = KeyMapping::new(
+                pid,
+                form_factor.layout(),
+                crate::devices::device_name_from_product_id(pid).to_string(),
+                hid_codes,
+            );
+            for i in indices {
+                let (key, hid_code) = APEX_LED_TABLE[i];
+                mapping.add_key(key, KeyAddress::new(hid_code));
+            }
+            self.mappings.insert(pid, mapping);
+        }
+    }
+
+    /// [EXPERIMENTAL] Apex M750 mapping: every labelled slot of [`APEX_M750_GRID`], addressed by
+    /// the key's HID usage from [`APEX_LED_TABLE`].
+    fn add_apex_m750_mapping(&mut self) {
+        let keys: Vec<(KeyId, u8)> = APEX_M750_GRID
+            .iter()
+            .flatten()
+            .filter_map(|&key| apex_led_index(key).map(|i| (key, APEX_LED_TABLE[i].1)))
+            .collect();
+        let mut mapping = KeyMapping::new(
+            product_ids::APEX_M750,
+            KeyboardLayout::FullSize,
+            "Apex M750".to_string(),
+            keys.iter().map(|(_, hid)| *hid).collect(),
+        );
+        for (key, hid_code) in keys {
+            mapping.add_key(key, KeyAddress::new(hid_code));
+        }
+        self.mappings.insert(product_ids::APEX_M750, mapping);
     }
 
     /// Add Apex Pro TKL 2023 key mapping with verified HID codes.
@@ -558,177 +1032,7 @@ impl KeyMappingDatabase {
         // SteelSeries key (HID 240 - discovered from migration files)
         mapping.add_key(KeyId::SteelSeriesKey, KeyAddress::new(240));
 
-        let mut wireless_mapping = mapping.clone();
-        wireless_mapping.product_id = product_ids::APEX_PRO_TKL_2023_WIRELESS;
         self.mappings.insert(product_ids::APEX_PRO_TKL_2023, mapping);
-        self.mappings
-            .insert(product_ids::APEX_PRO_TKL_2023_WIRELESS, wireless_mapping);
-    }
-
-    /// Add Apex Pro (full-size) key mapping with verified HID codes.
-    fn add_apex_pro_full_mapping(&mut self) {
-        // Complete full-size HID code list from apex_7+pro.migration (104 keys)
-        let full_hid_codes = vec![
-            4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
-            32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58,
-            59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85,
-            86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 133, 135, 136, 137, 138, 139, 224, 225, 226,
-            227, 228, 229, 230, 231, 240,
-        ];
-
-        let mut mapping = KeyMapping::new(
-            product_ids::APEX_PRO,
-            KeyboardLayout::FullSize,
-            "Apex Pro".to_string(),
-            full_hid_codes,
-        );
-
-        // Copy all TKL keys first
-        // Function row
-        mapping.add_key(KeyId::Escape, KeyAddress::new(41));
-        mapping.add_key(KeyId::F1, KeyAddress::new(58));
-        mapping.add_key(KeyId::F2, KeyAddress::new(59));
-        mapping.add_key(KeyId::F3, KeyAddress::new(60));
-        mapping.add_key(KeyId::F4, KeyAddress::new(61));
-        mapping.add_key(KeyId::F5, KeyAddress::new(62));
-        mapping.add_key(KeyId::F6, KeyAddress::new(63));
-        mapping.add_key(KeyId::F7, KeyAddress::new(64));
-        mapping.add_key(KeyId::F8, KeyAddress::new(65));
-        mapping.add_key(KeyId::F9, KeyAddress::new(66));
-        mapping.add_key(KeyId::F10, KeyAddress::new(67));
-        mapping.add_key(KeyId::F11, KeyAddress::new(68));
-        mapping.add_key(KeyId::F12, KeyAddress::new(69));
-
-        // Number row
-        mapping.add_key(KeyId::Backtick, KeyAddress::new(53));
-        mapping.add_key(KeyId::Key1, KeyAddress::new(30));
-        mapping.add_key(KeyId::Key2, KeyAddress::new(31));
-        mapping.add_key(KeyId::Key3, KeyAddress::new(32));
-        mapping.add_key(KeyId::Key4, KeyAddress::new(33));
-        mapping.add_key(KeyId::Key5, KeyAddress::new(34));
-        mapping.add_key(KeyId::Key6, KeyAddress::new(35));
-        mapping.add_key(KeyId::Key7, KeyAddress::new(36));
-        mapping.add_key(KeyId::Key8, KeyAddress::new(37));
-        mapping.add_key(KeyId::Key9, KeyAddress::new(38));
-        mapping.add_key(KeyId::Key0, KeyAddress::new(39));
-        mapping.add_key(KeyId::Minus, KeyAddress::new(45));
-        mapping.add_key(KeyId::Equal, KeyAddress::new(46));
-        mapping.add_key(KeyId::Backspace, KeyAddress::new(42));
-
-        // QWERTY row
-        mapping.add_key(KeyId::Tab, KeyAddress::new(43));
-        mapping.add_key(KeyId::Q, KeyAddress::new(20));
-        mapping.add_key(KeyId::W, KeyAddress::new(26));
-        mapping.add_key(KeyId::E, KeyAddress::new(8));
-        mapping.add_key(KeyId::R, KeyAddress::new(21));
-        mapping.add_key(KeyId::T, KeyAddress::new(23));
-        mapping.add_key(KeyId::Y, KeyAddress::new(28));
-        mapping.add_key(KeyId::U, KeyAddress::new(24));
-        mapping.add_key(KeyId::I, KeyAddress::new(12));
-        mapping.add_key(KeyId::O, KeyAddress::new(18));
-        mapping.add_key(KeyId::P, KeyAddress::new(19));
-        mapping.add_key(KeyId::LeftBracket, KeyAddress::new(47));
-        mapping.add_key(KeyId::RightBracket, KeyAddress::new(48));
-        mapping.add_key(KeyId::Backslash, KeyAddress::new(49));
-
-        // Home row
-        mapping.add_key(KeyId::CapsLock, KeyAddress::new(57));
-        mapping.add_key(KeyId::A, KeyAddress::new(4));
-        mapping.add_key(KeyId::S, KeyAddress::new(22));
-        mapping.add_key(KeyId::D, KeyAddress::new(7));
-        mapping.add_key(KeyId::F, KeyAddress::new(9));
-        mapping.add_key(KeyId::G, KeyAddress::new(10));
-        mapping.add_key(KeyId::H, KeyAddress::new(11));
-        mapping.add_key(KeyId::J, KeyAddress::new(13));
-        mapping.add_key(KeyId::K, KeyAddress::new(14));
-        mapping.add_key(KeyId::L, KeyAddress::new(15));
-        mapping.add_key(KeyId::Semicolon, KeyAddress::new(51));
-        mapping.add_key(KeyId::Quote, KeyAddress::new(52));
-        mapping.add_key(KeyId::Enter, KeyAddress::new(40));
-
-        // Bottom letter row
-        mapping.add_key(KeyId::LeftShift, KeyAddress::new(225));
-        mapping.add_key(KeyId::Z, KeyAddress::new(29));
-        mapping.add_key(KeyId::X, KeyAddress::new(27));
-        mapping.add_key(KeyId::C, KeyAddress::new(6));
-        mapping.add_key(KeyId::V, KeyAddress::new(25));
-        mapping.add_key(KeyId::B, KeyAddress::new(5));
-        mapping.add_key(KeyId::N, KeyAddress::new(17));
-        mapping.add_key(KeyId::M, KeyAddress::new(16));
-        mapping.add_key(KeyId::Comma, KeyAddress::new(54));
-        mapping.add_key(KeyId::Period, KeyAddress::new(55));
-        mapping.add_key(KeyId::Slash, KeyAddress::new(56));
-        mapping.add_key(KeyId::RightShift, KeyAddress::new(229));
-
-        // Bottom row
-        mapping.add_key(KeyId::LeftCtrl, KeyAddress::new(224));
-        mapping.add_key(KeyId::LeftWin, KeyAddress::new(227));
-        mapping.add_key(KeyId::LeftAlt, KeyAddress::new(226));
-        mapping.add_key(KeyId::Space, KeyAddress::new(44));
-        mapping.add_key(KeyId::RightAlt, KeyAddress::new(230));
-        mapping.add_key(KeyId::RightWin, KeyAddress::new(231));
-        mapping.add_key(KeyId::Menu, KeyAddress::new(101));
-        mapping.add_key(KeyId::RightCtrl, KeyAddress::new(228));
-
-        // Navigation cluster
-        mapping.add_key(KeyId::Insert, KeyAddress::new(73));
-        mapping.add_key(KeyId::Home, KeyAddress::new(74));
-        mapping.add_key(KeyId::PageUp, KeyAddress::new(75));
-        mapping.add_key(KeyId::Delete, KeyAddress::new(76));
-        mapping.add_key(KeyId::End, KeyAddress::new(77));
-        mapping.add_key(KeyId::PageDown, KeyAddress::new(78));
-
-        // Arrow cluster
-        mapping.add_key(KeyId::ArrowRight, KeyAddress::new(79));
-        mapping.add_key(KeyId::ArrowLeft, KeyAddress::new(80));
-        mapping.add_key(KeyId::ArrowDown, KeyAddress::new(81));
-        mapping.add_key(KeyId::ArrowUp, KeyAddress::new(82));
-
-        // Numpad (full-size only)
-        mapping.add_key(KeyId::NumLock, KeyAddress::new(83));
-        mapping.add_key(KeyId::NumSlash, KeyAddress::new(84));
-        mapping.add_key(KeyId::NumAsterisk, KeyAddress::new(85));
-        mapping.add_key(KeyId::NumMinus, KeyAddress::new(86));
-        mapping.add_key(KeyId::Num7, KeyAddress::new(95));
-        mapping.add_key(KeyId::Num8, KeyAddress::new(96));
-        mapping.add_key(KeyId::Num9, KeyAddress::new(97));
-        mapping.add_key(KeyId::NumPlus, KeyAddress::new(87));
-        mapping.add_key(KeyId::Num4, KeyAddress::new(92));
-        mapping.add_key(KeyId::Num5, KeyAddress::new(93));
-        mapping.add_key(KeyId::Num6, KeyAddress::new(94));
-        mapping.add_key(KeyId::Num1, KeyAddress::new(89));
-        mapping.add_key(KeyId::Num2, KeyAddress::new(90));
-        mapping.add_key(KeyId::Num3, KeyAddress::new(91));
-        mapping.add_key(KeyId::NumEnter, KeyAddress::new(88));
-        mapping.add_key(KeyId::Num0, KeyAddress::new(98));
-        mapping.add_key(KeyId::NumPeriod, KeyAddress::new(99));
-
-        // SteelSeries key
-        mapping.add_key(KeyId::SteelSeriesKey, KeyAddress::new(240));
-
-        self.mappings.insert(product_ids::APEX_PRO, mapping);
-    }
-
-    /// Add Apex Pro TKL (original) key mapping with verified HID codes.
-    fn add_apex_pro_tkl_mapping(&mut self) {
-        // Original Apex Pro TKL uses same HID codes as 2023 model
-        let tkl_hid_codes = vec![
-            4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
-            32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58,
-            59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 100, 133, 135, 136,
-            137, 138, 139, 224, 225, 226, 227, 228, 229, 230, 231, 240,
-        ];
-
-        let mapping = KeyMapping::new(
-            product_ids::APEX_PRO_TKL,
-            KeyboardLayout::TenKeyLess,
-            "Apex Pro TKL".to_string(),
-            tkl_hid_codes,
-        );
-
-        // Uses same keycodes as TKL 2023 - populated in a future update
-        // For now, create the mapping structure with supported HID codes
-        self.mappings.insert(product_ids::APEX_PRO_TKL, mapping);
     }
 
     /// Get key mapping for a specific product ID.
@@ -845,6 +1149,116 @@ mod tests {
         assert_eq!(KeyId::ArrowUp.to_string(), "UP");
         assert_eq!(KeyId::Num1.to_string(), "NUM1");
         assert_eq!(KeyId::SteelSeriesKey.to_string(), "SS");
+    }
+
+    /// OpenRGB SteelSeriesApexController.cpp `keys[]` and SteelSeriesApexRegions.h `led_names[]`
+    /// both have 112 entries.
+    #[test]
+    fn apex_led_table_has_112_unique_leds() {
+        use std::collections::HashSet;
+        assert_eq!(APEX_LED_COUNT, 112);
+        let hids: HashSet<u8> = APEX_LED_TABLE.iter().map(|(_, hid)| *hid).collect();
+        let keys: HashSet<KeyId> = APEX_LED_TABLE.iter().map(|(key, _)| *key).collect();
+        assert_eq!(hids.len(), 112, "HID usages must be unique");
+        assert_eq!(keys.len(), 112, "keys must be unique");
+        // Spot checks against OpenRGB's LED indices.
+        assert_eq!(APEX_LED_TABLE[0], (KeyId::A, 0x04));
+        assert_eq!(APEX_LED_TABLE[37], (KeyId::Escape, 0x29));
+        assert_eq!(APEX_LED_TABLE[45], (KeyId::NonUsHash, 0x32));
+        assert_eq!(APEX_LED_TABLE[78], (KeyId::NonUsBackslash, 0x64));
+        assert_eq!(APEX_LED_TABLE[87], (KeyId::SteelSeriesKey, 0xF0));
+        assert_eq!(APEX_LED_TABLE[88], (KeyId::Backslash, 0x31));
+        assert_eq!(APEX_LED_TABLE[94], (KeyId::NumLock, 0x53));
+        assert_eq!(APEX_LED_TABLE[111], (KeyId::MediaPlayPause, 0xFB));
+    }
+
+    #[test]
+    fn apex_led_lookups_are_inverse() {
+        for (index, (key, hid)) in APEX_LED_TABLE.iter().enumerate() {
+            assert_eq!(apex_led_index_for_hid(*hid), Some(index));
+            assert_eq!(apex_led_index(*key), Some(index));
+        }
+        assert_eq!(apex_led_index_for_hid(0x65), None, "no Menu LED on Apex boards");
+        assert_eq!(apex_led_index_for_hid(0x00), None);
+        assert_eq!(apex_led_index(KeyId::Menu), None);
+        assert_eq!(apex_led_index(KeyId::VolumeWheel), None);
+    }
+
+    /// OpenRGB `MATRIX_MAP_ANSI` plus `apex_tkl_us_region_patch` / `apex_mini_us_region_patch`,
+    /// with the 7 ISO / Japanese LEDs in every set.
+    #[test]
+    fn apex_form_factor_counts() {
+        assert_eq!(ApexFormFactor::FullSize.led_indices().len(), 111);
+        assert_eq!(ApexFormFactor::TenKeyLess.led_indices().len(), 92);
+        assert_eq!(ApexFormFactor::Mini.led_indices().len(), 68);
+
+        let has = |ff: ApexFormFactor, key| apex_led_index(key).is_some_and(|i| ff.has_led(i));
+        assert!(has(ApexFormFactor::FullSize, KeyId::Num5));
+        assert!(has(ApexFormFactor::FullSize, KeyId::Pause));
+        assert!(!has(ApexFormFactor::FullSize, KeyId::MediaPlayPause));
+        assert!(!has(ApexFormFactor::TenKeyLess, KeyId::Num5));
+        assert!(!has(ApexFormFactor::TenKeyLess, KeyId::PrintScreen));
+        assert!(has(ApexFormFactor::TenKeyLess, KeyId::MediaPlayPause));
+        assert!(has(ApexFormFactor::TenKeyLess, KeyId::F12));
+        assert!(!has(ApexFormFactor::Mini, KeyId::F1));
+        assert!(!has(ApexFormFactor::Mini, KeyId::ArrowUp));
+        assert!(!has(ApexFormFactor::Mini, KeyId::Backtick));
+        assert!(!has(ApexFormFactor::Mini, KeyId::Delete));
+        assert!(has(ApexFormFactor::Mini, KeyId::Escape));
+        assert!(has(ApexFormFactor::Mini, KeyId::SteelSeriesKey));
+        for ff in [
+            ApexFormFactor::FullSize,
+            ApexFormFactor::TenKeyLess,
+            ApexFormFactor::Mini,
+        ] {
+            assert!(has(ff, KeyId::NonUsBackslash) && has(ff, KeyId::JpYen));
+        }
+    }
+
+    /// OpenRGB SteelSeriesApexMController.cpp `keys_m`: 132 slots, 22 per row.
+    #[test]
+    fn apex_m750_grid_has_unique_labelled_keys() {
+        use std::collections::HashSet;
+        let keys: Vec<KeyId> = APEX_M750_GRID.iter().flatten().copied().collect();
+        let unique: HashSet<KeyId> = keys.iter().copied().collect();
+        assert_eq!(unique.len(), keys.len(), "a key appears in two slots");
+        assert_eq!(keys.len(), 104);
+        assert!(keys.iter().all(|key| apex_led_index(*key).is_some()));
+        assert_eq!(APEX_M750_GRID[0], Some(KeyId::LeftCtrl));
+        assert_eq!(APEX_M750_GRID[4], Some(KeyId::Space));
+        assert_eq!(APEX_M750_GRID[21], Some(KeyId::NumPeriod));
+        assert_eq!(APEX_M750_GRID[110], Some(KeyId::Escape));
+        assert_eq!(APEX_M750_GRID[127], Some(KeyId::Pause));
+    }
+
+    #[test]
+    fn openrgb_mappings_cover_every_per_key_pid() {
+        let db = KeyMappingDatabase::new();
+        for (pid, expected) in [
+            (product_ids::APEX_PRO, 111),
+            (product_ids::APEX_7, 111),
+            (product_ids::APEX_5, 111),
+            (product_ids::APEX_PRO_2024, 111),
+            (product_ids::APEX_PRO_TKL, 92),
+            (product_ids::APEX_7_TKL, 92),
+            (product_ids::APEX_9_TKL, 92),
+            (product_ids::APEX_PRO_TKL_2023_WIRELESS, 92),
+            (product_ids::APEX_PRO_TKL_2024, 92),
+            (product_ids::APEX_PRO_TKL_WIRELESS_2024, 92),
+            (product_ids::APEX_9_MINI, 68),
+            (product_ids::APEX_PRO_MINI, 68),
+            (product_ids::APEX_PRO_MINI_2024, 68),
+            (product_ids::APEX_M750, 104),
+        ] {
+            let mapping = db.get_mapping(pid).unwrap();
+            assert_eq!(mapping.total_keys, expected, "PID {pid:#06x}");
+            assert_eq!(mapping.supported_hid_codes.len(), expected, "PID {pid:#06x}");
+            assert!(mapping.get_all_keys().iter().all(|k| apex_led_index(*k).is_some()));
+        }
+        // The Apex Pro TKL (2023) keeps its GG-derived mapping.
+        let tkl_2023 = db.get_mapping(product_ids::APEX_PRO_TKL_2023).unwrap();
+        assert_eq!(tkl_2023.get_key_address(KeyId::Menu), Some(KeyAddress::new(101)));
+        assert!(db.get_mapping(product_ids::APEX_3_TKL).is_none());
     }
 
     #[test]
