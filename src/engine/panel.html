@@ -5,29 +5,536 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SteelSeries GG</title>
 <style>
-  body { font-family: system-ui, sans-serif; margin: 2rem; background: #111; color: #eee; }
-  pre { background: #1c1c1c; padding: 1rem; border-radius: 8px; overflow: auto; }
+:root {
+  --bg: #121214; --panel: #1b1b1f; --panel2: #232328; --line: #2e2e35; --text: #ececf1;
+  --muted: #9a9aa6; --accent: #ff6a13; --accent2: #ff8f4d; --ok: #3ccf7a; --warn: #f5b942; --bad: #ff5d5d;
+  --radius: 12px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Ubuntu, sans-serif; }
+button, input, select { font: inherit; color: inherit; }
+.app { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh; }
+nav { background: #0d0d0f; border-right: 1px solid var(--line); padding: 18px 12px; display: flex; flex-direction: column; gap: 4px; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 18px; font-weight: 700; letter-spacing: .3px; }
+.brand-mark { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg, var(--accent), #ff3d00); display: grid; place-items: center; font-size: 13px; color: #fff; }
+.tab { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 9px; color: var(--muted); cursor: pointer; border: 0; background: none; text-align: left; width: 100%; }
+.tab:hover { background: var(--panel); color: var(--text); }
+.tab.active { background: var(--panel2); color: var(--text); box-shadow: inset 3px 0 0 var(--accent); }
+.tab svg { width: 18px; height: 18px; flex: none; }
+.nav-foot { margin-top: auto; padding: 10px; font-size: 12px; color: var(--muted); }
+main { padding: 26px 30px 60px; overflow: auto; min-width: 0; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 15px; margin: 0 0 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .6px; }
+.sub { color: var(--muted); margin: 0 0 22px; }
+.banner { background: #2a1f12; border: 1px solid #5a3b14; color: #ffd8a8; padding: 10px 14px; border-radius: 10px; margin-bottom: 16px; }
+.banner.bad { background: #2a1414; border-color: #5a1f1f; color: #ffc4c4; }
+.grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; min-width: 0; }
+.card + .card { margin-top: 16px; }
+.devices { display: flex; flex-direction: column; gap: 10px; }
+.device { display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; text-align: left; width: 100%; }
+.device:hover { border-color: #46464f; }
+.device.active { border-color: var(--accent); background: #22191380; }
+.device-icon { width: 38px; height: 38px; border-radius: 9px; background: var(--panel2); display: grid; place-items: center; flex: none; }
+.device-icon svg { width: 22px; height: 22px; color: var(--accent2); }
+.device-name { font-weight: 600; }
+.device-meta { color: var(--muted); font-size: 12px; }
+.battery { display: inline-flex; align-items: center; gap: 6px; }
+.battery-bar { width: 26px; height: 11px; border: 1.5px solid currentColor; border-radius: 3px; position: relative; }
+.battery-bar i { position: absolute; left: 1px; top: 1px; bottom: 1px; border-radius: 1px; background: currentColor; }
+.row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); }
+.row:first-of-type { border-top: 0; }
+.row-label { width: 200px; flex: none; }
+.row-label b { display: block; font-weight: 600; }
+.row-label small { color: var(--muted); }
+.row-control { flex: 1; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.badge { font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+.badge.ref { color: var(--warn); border-color: #6b5520; }
+.badge.guess { color: var(--bad); border-color: #6b2525; }
+input[type=range] { flex: 1; min-width: 140px; accent-color: var(--accent); }
+.num { width: 64px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+select, input[type=text], input[type=number] { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+input[type=number] { width: 90px; }
+input[type=color] { width: 40px; height: 32px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); padding: 2px; cursor: pointer; }
+.btn { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+.btn:hover { border-color: #55555f; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn.primary:hover { background: var(--accent2); }
+.btn.danger { color: #ffb4b4; }
+.btn:disabled { opacity: .5; cursor: default; }
+.seg { display: inline-flex; background: var(--panel2); border: 1px solid var(--line); border-radius: 9px; padding: 3px; flex-wrap: wrap; }
+.seg button { border: 0; background: none; padding: 6px 12px; border-radius: 7px; cursor: pointer; color: var(--muted); }
+.seg button.on { background: var(--accent); color: #fff; }
+.switch { position: relative; width: 42px; height: 24px; flex: none; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch span { position: absolute; inset: 0; background: #3a3a42; border-radius: 999px; transition: .15s; cursor: pointer; }
+.switch span::after { content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: .15s; }
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::after { transform: translateX(18px); }
+.eq { display: flex; gap: 12px; align-items: flex-end; padding: 6px 0; overflow-x: auto; }
+.eq-band { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.eq-band input[type=range] { writing-mode: vertical-lr; direction: rtl; height: 120px; width: 24px; min-width: 0; flex: none; }
+.dpi { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.zones { display: flex; gap: 12px; flex-wrap: wrap; }
+.zone { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+.buttons-map { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; width: 100%; }
+.profiles { display: flex; flex-direction: column; gap: 10px; }
+.profile { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.profile.active { border-color: var(--accent); }
+.profile-main { flex: 1; min-width: 0; }
+.profile-main small { color: var(--muted); display: block; }
+.pill { font-size: 11px; background: var(--accent); color: #fff; padding: 2px 8px; border-radius: 999px; }
+.empty { color: var(--muted); padding: 30px; text-align: center; border: 1px dashed var(--line); border-radius: var(--radius); }
+.toast { position: fixed; right: 20px; bottom: 20px; background: #26262c; border: 1px solid var(--line); padding: 10px 14px; border-radius: 10px; max-width: 420px; box-shadow: 0 8px 24px #0008; opacity: 0; transform: translateY(8px); transition: .2s; pointer-events: none; }
+.toast.show { opacity: 1; transform: none; }
+.toast.err { border-color: #6b2525; color: #ffc4c4; }
+.muted { color: var(--muted); }
+.kv { display: grid; grid-template-columns: 160px 1fr; gap: 8px 14px; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  nav { flex-direction: row; flex-wrap: wrap; padding: 10px; }
+  .brand { width: 100%; padding-bottom: 8px; }
+  .tab { width: auto; }
+  .nav-foot { display: none; }
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  main { padding: 18px 16px 50px; }
+  .row { flex-direction: column; align-items: stretch; }
+  .row-label { width: auto; }
+}
 </style>
 </head>
 <body>
-<h1>SteelSeries GG</h1>
-<p id="msg">Loading…</p>
-<pre id="out"></pre>
+<div class="app">
+  <nav id="nav">
+    <div class="brand"><div class="brand-mark">GG</div><div>SteelSeries GG</div></div>
+    <button class="tab" data-tab="devices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="7" width="20" height="11" rx="2"/><path d="M6 11h.01M10 11h.01M14 11h.01M18 11h.01M7 15h10"/></svg>Devices</button>
+    <button class="tab" data-tab="lighting"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>Lighting</button>
+    <button class="tab" data-tab="profiles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Profiles</button>
+    <button class="tab" data-tab="moments"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/></svg>Moments</button>
+    <button class="tab" data-tab="about"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>About</button>
+    <div class="nav-foot" id="navFoot"></div>
+  </nav>
+  <main id="main"></main>
+</div>
+<div class="toast" id="toast"></div>
 <script>
-const token = new URLSearchParams(location.hash.slice(1)).get('token') || sessionStorage.getItem('ssgg-token');
-if (token) { sessionStorage.setItem('ssgg-token', token); history.replaceState(null, '', '/'); }
+'use strict';
+// ---------- transport ----------
+const params = new URLSearchParams(location.hash.slice(1));
+const DEMO = params.has('demo');
+let token = params.get('token') || sessionStorage.getItem('ssgg-token');
+if (params.get('token')) { sessionStorage.setItem('ssgg-token', token); history.replaceState(null, '', DEMO ? '/#demo' : '/'); }
+
 async function call(cmd) {
+  if (DEMO) return demoCall(cmd);
   const r = await fetch('/api/command', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(cmd) });
   const j = await r.json();
   if (!j.ok) throw new Error(j.error);
   return j.data;
 }
-async function tick() {
-  if (!token) { document.getElementById('msg').textContent = 'Open this page with `ssgg ui`.'; return; }
-  try { const s = await call({ cmd: 'status' }); document.getElementById('msg').textContent = s.devices.length + ' device(s)'; document.getElementById('out').textContent = JSON.stringify(s, null, 2); }
-  catch (e) { document.getElementById('msg').textContent = e.message; }
+
+// ---------- helpers ----------
+const $ = (sel, root = document) => root.querySelector(sel);
+function el(tag, attrs = {}, ...children) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') n.className = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else if (v === true) n.setAttribute(k, '');
+    else if (v !== false && v != null) n.setAttribute(k, v);
+  }
+  for (const c of children.flat(Infinity)) if (c != null && c !== false) n.append(c.nodeType ? c : document.createTextNode(String(c)));
+  return n;
 }
-tick(); setInterval(tick, 3000);
+function fill(node, ...kids) { node.replaceChildren(...kids.flat(Infinity).filter(k => k != null && k !== false)); }
+function toast(msg, err) {
+  const t = $('#toast'); t.textContent = msg; t.className = 'toast show' + (err ? ' err' : '');
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.className = 'toast', 3200);
+}
+async function run(cmd, okMsg) {
+  try { const d = await call(cmd); if (okMsg) toast(okMsg); return d; }
+  catch (e) { toast(e.message, true); throw e; }
+}
+const hex = c => '#' + [c.r, c.g, c.b].map(v => v.toString(16).padStart(2, '0')).join('');
+const rgb = h => ({ r: parseInt(h.slice(1, 3), 16), g: parseInt(h.slice(3, 5), 16), b: parseInt(h.slice(5, 7), 16) });
+function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+const ICONS = {
+  Keyboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="7" width="20" height="11" rx="2"/><path d="M6 11h.01M10 11h.01M14 11h.01M18 11h.01M7 15h10"/></svg>',
+  Mouse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/></svg>',
+  Headset: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/></svg>',
+};
+function iconFor(kind) { const s = el('div', { class: 'device-icon' }); s.innerHTML = ICONS[kind] || ICONS.Keyboard; return s; }
+function batteryView(st) {
+  if (st.battery_percent == null) return null;
+  const p = st.battery_percent, color = p <= 15 ? 'var(--bad)' : p <= 30 ? 'var(--warn)' : 'var(--ok)';
+  const bar = el('span', { class: 'battery-bar' }, el('i', { style: `width:calc(${p}% - 2px)` }));
+  return el('span', { class: 'battery', style: `color:${color}` }, bar, `${p}%${st.charging ? ' ⚡' : ''}`);
+}
+
+// ---------- state ----------
+const VIEWS_ORDER = ['devices', 'lighting', 'profiles', 'moments', 'about'];
+let state = { snapshot: null, selected: params.get('device'), tab: VIEWS_ORDER.includes(params.get('tab')) ? params.get('tab') : 'devices' };
+
+async function refresh() {
+  try {
+    state.snapshot = await call({ cmd: 'status' });
+    if (!state.selected || !state.snapshot.devices.some(d => d.key === state.selected)) state.selected = state.snapshot.devices[0]?.key || null;
+    $('#navFoot').textContent = `v${state.snapshot.version}${DEMO ? ' · demo' : ''}`;
+  } catch (e) {
+    state.snapshot = null; state.error = e.message;
+  }
+}
+
+// ---------- views ----------
+function header(title, sub) { return [el('h1', {}, title), el('p', { class: 'sub' }, sub)]; }
+
+function banners() {
+  const out = [];
+  if (!token && !DEMO) out.push(el('div', { class: 'banner bad' }, 'Open this page with ', el('code', {}, 'ssgg ui'), ' so it can talk to the daemon.'));
+  if (DEMO) out.push(el('div', { class: 'banner' }, 'Demo mode: these devices are simulated. Nothing is sent to hardware.'));
+  if (state.error && !state.snapshot) out.push(el('div', { class: 'banner bad' }, state.error));
+  for (const w of state.snapshot?.warnings || []) out.push(el('div', { class: 'banner' }, w));
+  return out;
+}
+
+async function viewDevices() {
+  const snap = state.snapshot;
+  const main = [...header('Devices', 'Everything connected, with its settings.'), ...banners()];
+  if (!snap || !snap.devices.length) {
+    main.push(el('div', { class: 'empty' }, 'No SteelSeries devices connected. Plug one in — the list updates by itself.'));
+    return main;
+  }
+  const list = el('div', { class: 'devices' }, snap.devices.map(d => el('button', {
+    class: 'device' + (d.key === state.selected ? ' active' : ''),
+    onclick: () => { state.selected = d.key; render(); },
+  }, iconFor(d.kind), el('div', {}, el('div', { class: 'device-name' }, d.name), el('div', { class: 'device-meta' }, batteryView(d.status) || d.kind)))));
+  const dev = snap.devices.find(d => d.key === state.selected);
+  const detail = el('div', {});
+  main.push(el('div', { class: 'grid' }, list, detail));
+  if (dev) await fillDevice(detail, dev);
+  return main;
+}
+
+async function fillDevice(root, dev) {
+  const st = dev.status, facts = [];
+  if (st.battery_percent != null) facts.push(['Battery', batteryView(st)]);
+  if (st.chatmix) facts.push(['ChatMix', `Game ${st.chatmix.game}% · Chat ${st.chatmix.chat}%`]);
+  if (st.wireless_connected === false) facts.push(['Connection', 'Headset off or out of range']);
+  if (st.mic_muted != null) facts.push(['Microphone', st.mic_muted ? 'Muted' : 'Live']);
+  for (const [k, v] of Object.entries(st.extra || {})) facts.push([k, v]);
+  const info = el('div', { class: 'card' }, el('h2', {}, dev.name),
+    el('div', { class: 'kv' }, el('span', { class: 'muted' }, 'Device key'), el('code', {}, dev.key),
+      facts.map(([k, v]) => [el('span', { class: 'muted' }, k), el('span', {}, v)])));
+  root.append(info);
+  if (dev.lighting) root.append(lightingCard(dev));
+  let view;
+  try { view = await call({ cmd: 'settings', device: dev.key }); } catch (e) { root.append(el('div', { class: 'card' }, e.message)); return; }
+  if (view.settings.length) {
+    const card = el('div', { class: 'card' }, el('h2', {}, 'Settings'));
+    for (const entry of view.settings) card.append(settingRow(dev.key, entry));
+    card.append(el('p', { class: 'muted', style: 'margin:14px 0 0;font-size:12px' }, 'Untested = from a published open-source driver; Guess = extrapolated. Neither was tried on this hardware.'));
+    root.append(card);
+  }
+}
+
+function verificationBadge(v) {
+  if (v === 'reference') return el('span', { class: 'badge ref', title: 'Byte layout from a published open-source driver; not tried on hardware by this project' }, 'untested');
+  if (v === 'guess') return el('span', { class: 'badge guess', title: 'Extrapolated from a similar model' }, 'guess');
+  return null;
+}
+
+function settingRow(device, entry) {
+  const d = entry.descriptor, k = d.kind, v = entry.value;
+  const send = value => run({ cmd: 'set', device, setting: d.id, value }, `${d.label} updated`);
+  const sendLater = debounce(send, 250);
+  const control = el('div', { class: 'row-control' });
+  const cur = v ? Object.values(v)[0] : undefined;
+  switch (k.type) {
+    case 'range': {
+      const num = el('span', { class: 'num' }, `${cur ?? k.min}${k.unit || ''}`);
+      control.append(el('input', { type: 'range', min: k.min, max: k.max, step: k.step, value: cur ?? k.min,
+        oninput: e => { num.textContent = e.target.value + (k.unit || ''); sendLater({ int: +e.target.value }); } }), num);
+      break;
+    }
+    case 'choice': {
+      if (k.options.length <= 5) {
+        const seg = el('div', { class: 'seg' });
+        for (const o of k.options) seg.append(el('button', { class: o.id === cur ? 'on' : '', onclick: e => {
+          [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); send({ choice: o.id }); } }, o.label));
+        control.append(seg);
+      } else {
+        control.append(el('select', { onchange: e => send({ choice: e.target.value }) },
+          k.options.map(o => el('option', { value: o.id, selected: o.id === cur }, o.label))));
+      }
+      break;
+    }
+    case 'toggle':
+      control.append(el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: !!cur, onchange: e => send({ bool: e.target.checked }) }), el('span')));
+      break;
+    case 'color':
+      control.append(el('input', { type: 'color', value: cur ? hex(cur) : '#ff6a13', oninput: e => sendLater({ color: rgb(e.target.value) }) }));
+      break;
+    case 'color_zones': {
+      const colors = (cur && cur.length === k.zones.length) ? cur.map(hex) : k.zones.map((_, i) => cur?.[0] ? hex(cur[0]) : '#ff6a13');
+      const wrap = el('div', { class: 'zones' });
+      k.zones.forEach((z, i) => wrap.append(el('label', { class: 'zone' }, el('input', { type: 'color', value: colors[i],
+        oninput: e => { colors[i] = e.target.value; sendLater({ colors: colors.map(rgb) }); } }), z)));
+      control.append(wrap);
+      break;
+    }
+    case 'dpi_stages': {
+      let stages = Array.isArray(cur) && cur.length ? [...cur] : [800, 1600];
+      const wrap = el('div', { class: 'dpi' });
+      const draw = () => {
+        fill(wrap, ...stages.map((s, i) => el('input', { type: 'number', min: k.min, max: k.max, step: k.step, value: s,
+          onchange: e => { stages[i] = +e.target.value; send({ dpi: stages }); } })),
+          el('button', { class: 'btn', disabled: stages.length >= k.max_stages, onclick: () => { stages.push(stages[stages.length - 1]); draw(); send({ dpi: stages }); } }, '+'),
+          el('button', { class: 'btn', disabled: stages.length <= 1, onclick: () => { stages.pop(); draw(); send({ dpi: stages }); } }, '−'));
+      };
+      draw(); control.append(wrap, el('span', { class: 'muted' }, `${k.min}–${k.max}, step ${k.step}`));
+      break;
+    }
+    case 'equalizer': {
+      const gains = Array.isArray(cur) && cur.length === k.bands_hz.length ? [...cur] : k.bands_hz.map(() => 0);
+      const eq = el('div', { class: 'eq' });
+      k.bands_hz.forEach((hz, i) => {
+        const val = el('span', {}, `${gains[i] > 0 ? '+' : ''}${gains[i]}`);
+        eq.append(el('div', { class: 'eq-band' }, val, el('input', { type: 'range', min: k.min_db, max: k.max_db, step: k.step_db, value: gains[i],
+          oninput: e => { gains[i] = +e.target.value; val.textContent = `${gains[i] > 0 ? '+' : ''}${gains[i]}`; sendLater({ gains }); } }),
+          hz >= 1000 ? `${hz / 1000}k` : `${hz}`));
+      });
+      control.append(eq);
+      break;
+    }
+    case 'button_map': {
+      const map = { ...(cur || {}) };
+      const grid = el('div', { class: 'buttons-map' });
+      for (const b of k.buttons) grid.append(el('span', { class: 'muted' }, b), el('select', { onchange: e => { map[b] = e.target.value; send({ buttons: map }); } },
+        k.actions.map(a => el('option', { value: a, selected: (map[b] || b) === a }, a))));
+      control.append(grid);
+      break;
+    }
+    case 'action':
+      control.append(el('button', { class: 'btn', onclick: () => send('trigger') }, d.label));
+      break;
+    default:
+      control.append(el('span', { class: 'muted' }, 'Unsupported control'));
+  }
+  const badge = verificationBadge(d.verification);
+  if (badge) control.append(badge);
+  return el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, d.label), d.description ? el('small', {}, d.description) : null), control);
+}
+
+const EFFECTS = [['static', 'Static'], ['breathing', 'Breathing'], ['spectrum', 'Spectrum'], ['wave', 'Wave'], ['gradient', 'Gradient'], ['off', 'Off']];
+function effectName(e) { return typeof e === 'string' ? e.toLowerCase() : Object.keys(e)[0].toLowerCase(); }
+function effectBody(e) { return typeof e === 'string' ? {} : Object.values(e)[0]; }
+function buildEffect(name, c1, c2, speed) {
+  switch (name) {
+    case 'static': return { Static: { color: rgb(c1) } };
+    case 'breathing': return { Breathing: { color: rgb(c1), speed } };
+    case 'spectrum': return { Spectrum: { speed } };
+    case 'wave': return { Wave: { colors: [rgb(c1), rgb(c2)], speed, direction: 'LeftToRight' } };
+    case 'gradient': return { Gradient: { start: rgb(c1), end: rgb(c2) } };
+    default: return 'Off';
+  }
+}
+
+function lightingEditor(lighting, apply, extra) {
+  const body = effectBody(lighting.effect);
+  let name = effectName(lighting.effect);
+  let c1 = hex(body.color || body.start || (body.colors && body.colors[0]) || { r: 255, g: 106, b: 19 });
+  let c2 = hex(body.end || (body.colors && body.colors[1]) || { r: 0, g: 120, b: 255 });
+  let speed = body.speed || 1;
+  const push = () => apply({ effect: buildEffect(name, c1, c2, speed) });
+  const pushLater = debounce(push, 200);
+  const seg = el('div', { class: 'seg' });
+  const colorsRow = el('div', { class: 'row-control' });
+  const speedRow = el('div', { class: 'row-control' });
+  const drawExtras = () => {
+    const needs1 = ['static', 'breathing', 'wave', 'gradient'].includes(name), needs2 = ['wave', 'gradient'].includes(name);
+    fill(colorsRow,
+      needs1 ? el('input', { type: 'color', value: c1, oninput: e => { c1 = e.target.value; pushLater(); } }) : el('span', { class: 'muted' }, '—'),
+      needs2 ? el('input', { type: 'color', value: c2, oninput: e => { c2 = e.target.value; pushLater(); } }) : null);
+    const animated = ['breathing', 'spectrum', 'wave'].includes(name);
+    const num = el('span', { class: 'num' }, speed.toFixed(1) + '×');
+    fill(speedRow, animated ? el('input', { type: 'range', min: 0.1, max: 4, step: 0.1, value: speed,
+      oninput: e => { speed = +e.target.value; num.textContent = speed.toFixed(1) + '×'; pushLater(); } }) : el('span', { class: 'muted' }, '—'), animated ? num : null);
+  };
+  for (const [id, label] of EFFECTS) seg.append(el('button', { class: id === name ? 'on' : '', onclick: e => {
+    name = id; [...seg.children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); drawExtras(); push(); } }, label));
+  drawExtras();
+  const bnum = el('span', { class: 'num' }, lighting.brightness + '%');
+  const sendBrightness = debounce(b => apply({ brightness: b }), 200);
+  return [
+    el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'Effect')), el('div', { class: 'row-control' }, seg)),
+    el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'Colors')), colorsRow),
+    el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'Speed')), speedRow),
+    el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'Brightness')), el('div', { class: 'row-control' },
+      el('input', { type: 'range', min: 0, max: 100, value: lighting.brightness, oninput: e => { bnum.textContent = e.target.value + '%'; sendBrightness(+e.target.value); } }), bnum)),
+    extra,
+  ];
+}
+
+function lightingCard(dev) {
+  const card = el('div', { class: 'card' }, el('h2', {}, 'Lighting'));
+  const apply = patch => run({ cmd: 'lighting', device: dev.key, effect: patch.effect ?? null, brightness: patch.brightness ?? null }).then(refresh);
+  const sync = el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'Sync with all devices'), el('small', {}, 'Follow the global lighting')),
+    el('div', { class: 'row-control' }, el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: dev.follows_global_lighting, onchange: async e => {
+      if (e.target.checked) await run({ cmd: 'lighting', device: dev.key, effect: null, brightness: null, follow_global: true }, 'Synced');
+      else await run({ cmd: 'lighting', device: dev.key, effect: dev.lighting.effect, brightness: dev.lighting.brightness }, 'Own lighting');
+      await refresh(); render(); } }), el('span'))));
+  card.append(...lightingEditor(dev.lighting, apply, sync));
+  return card;
+}
+
+async function viewLighting() {
+  const snap = state.snapshot;
+  const out = [...header('Lighting', 'One effect across every synced device (Prism sync).'), ...banners()];
+  if (!snap) return out;
+  const card = el('div', { class: 'card' }, el('h2', {}, 'Synced lighting'));
+  card.append(...lightingEditor(snap.lighting, patch => run({ cmd: 'lighting', device: null, effect: patch.effect ?? null, brightness: patch.brightness ?? null }).then(refresh)));
+  const synced = snap.devices.filter(d => d.lighting && d.follows_global_lighting).map(d => d.name);
+  card.append(el('p', { class: 'muted', style: 'margin:12px 0 0' }, synced.length ? `Applies to: ${synced.join(', ')}` : 'No device follows the synced lighting right now.'));
+  out.push(card);
+  return out;
+}
+
+async function viewProfiles() {
+  const out = [...header('Profiles', 'Save every device\'s settings and lighting, switch by hand or automatically when a game starts.'), ...banners()];
+  let list = [];
+  try { list = await call({ cmd: 'profile_list' }); } catch (e) { out.push(el('div', { class: 'banner bad' }, e.message)); return out; }
+  const nameInput = el('input', { type: 'text', placeholder: 'Profile name', style: 'flex:1;min-width:160px' });
+  out.push(el('div', { class: 'card' }, el('h2', {}, 'Save current setup'), el('div', { class: 'row-control' }, nameInput,
+    el('button', { class: 'btn primary', onclick: async () => {
+      const name = nameInput.value.trim(); if (!name) return toast('Enter a name', true);
+      await run({ cmd: 'profile_save', name, description: null }, `Saved ${name}`); render(); } }, 'Save'))));
+  const box = el('div', { class: 'profiles', style: 'margin-top:16px' });
+  if (!list.length) box.append(el('div', { class: 'empty' }, 'No profiles yet.'));
+  for (const p of list) {
+    const apps = el('input', { type: 'text', value: p.apps.join(', '), placeholder: 'Programs that switch to it, e.g. cs2, eldenring.exe', style: 'width:100%' });
+    box.append(el('div', { class: 'profile' + (p.active ? ' active' : '') },
+      el('div', { class: 'profile-main' }, el('b', {}, p.name, ' ', p.active ? el('span', { class: 'pill' }, 'active') : null),
+        p.description ? el('small', {}, p.description) : null,
+        el('div', { style: 'margin-top:8px;display:flex;gap:8px' }, apps, el('button', { class: 'btn', onclick: async () => {
+          await run({ cmd: 'profile_apps', name: p.name, apps: apps.value.split(',').map(s => s.trim()).filter(Boolean) }, 'Linked programs saved'); } }, 'Link'))),
+      el('button', { class: 'btn primary', disabled: p.active, onclick: async () => { await run({ cmd: 'profile_load', name: p.name }, `Loaded ${p.name}`); await refresh(); render(); } }, 'Activate'),
+      el('button', { class: 'btn danger', onclick: async () => { if (confirm(`Delete profile ${p.name}?`)) { await run({ cmd: 'profile_delete', name: p.name }, 'Deleted'); render(); } } }, 'Delete')));
+  }
+  out.push(box);
+  return out;
+}
+
+async function viewMoments() {
+  const out = [...header('Moments', 'Keep the last seconds of gameplay in memory and save them as a clip on demand.'), ...banners()];
+  let st;
+  try { st = await call({ cmd: 'moments_status' }); } catch (e) { out.push(el('div', { class: 'banner bad' }, e.message)); return out; }
+  const secs = el('input', { type: 'number', min: 5, max: 1200, value: st.replay_seconds });
+  out.push(el('div', { class: 'card' }, el('h2', {}, 'Instant replay'),
+    el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'Replay buffer'), el('small', {}, st.recording ? 'Recording' : st.enabled ? 'Enabled, not running' : 'Off')),
+      el('div', { class: 'row-control' }, el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: st.enabled, onchange: async e => {
+        await run({ cmd: 'moments_enable', enabled: e.target.checked, replay_seconds: +secs.value }, e.target.checked ? 'Replay buffer on' : 'Replay buffer off'); render(); } }), el('span')))),
+    el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'Length'), el('small', {}, 'Seconds kept')), el('div', { class: 'row-control' }, secs, el('span', { class: 'muted' }, 'seconds'))),
+    el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'Clips folder')), el('div', { class: 'row-control' }, el('code', {}, st.output_dir))),
+    st.last_error ? el('div', { class: 'banner', style: 'margin-top:10px' }, st.last_error) : null,
+    el('div', { style: 'margin-top:14px' }, el('button', { class: 'btn primary', disabled: !st.recording, onclick: async () => { await run({ cmd: 'moments_save' }, 'Clip saved'); } }, 'Save clip now')),
+    el('p', { class: 'muted', style: 'margin:12px 0 0;font-size:12px' }, 'Bind a key to: ssgg moments save')));
+  return out;
+}
+
+async function viewAbout() {
+  const snap = state.snapshot;
+  const out = [...header('About', 'Open-source SteelSeries GG for Linux.'), ...banners()];
+  out.push(el('div', { class: 'card' }, el('div', { class: 'kv' },
+    el('span', { class: 'muted' }, 'Version'), el('span', {}, snap?.version || '—'),
+    el('span', { class: 'muted' }, 'Daemon'), el('span', {}, snap ? (snap.daemon ? 'Running' : 'One-shot') : 'Unreachable'),
+    el('span', { class: 'muted' }, 'Active profile'), el('span', {}, snap?.active_profile || 'None'),
+    el('span', { class: 'muted' }, 'Devices'), el('span', {}, String(snap?.devices.length ?? 0)))),
+    el('div', { class: 'card' }, el('p', { style: 'margin:0' }, 'Device protocols marked "untested" come from published open-source drivers (OpenRGB, rivalcfg, HeadsetControl, apex-tux) and have not been tried on real hardware by this project. Report results so they can be confirmed.')));
+  return out;
+}
+
+const VIEWS = { devices: viewDevices, lighting: viewLighting, profiles: viewProfiles, moments: viewMoments, about: viewAbout };
+let rendering = false;
+async function render() {
+  if (rendering) return; rendering = true;
+  try {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === state.tab));
+    const content = await VIEWS[state.tab]();
+    fill($('#main'), content);
+  } finally { rendering = false; }
+}
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', async () => { state.tab = t.dataset.tab; await render(); }));
+
+// Live refresh of readings without disturbing controls being edited.
+setInterval(async () => {
+  if (document.hidden) return;
+  const before = JSON.stringify(state.snapshot?.devices.map(d => [d.key, d.status]));
+  await refresh();
+  const after = JSON.stringify(state.snapshot?.devices.map(d => [d.key, d.status]));
+  const active = document.activeElement && document.activeElement !== document.body;
+  if (before !== after && !active) render();
+}, 4000);
+
+// ---------- demo backend (no hardware; for previews and screenshots) ----------
+const demo = {
+  lighting: { effect: { Static: { color: { r: 255, g: 106, b: 19 } } }, brightness: 90 },
+  profiles: [{ name: 'Default', description: 'Everyday', apps: [], active: true }, { name: 'FPS', description: 'Low DPI, red lighting', apps: ['cs2', 'valorant.exe'], active: false }],
+  moments: { enabled: true, recording: true, replay_seconds: 30, output_dir: '~/Videos/SteelSeries Moments', last_error: null },
+  devices: [
+    { key: '1038:1628:DEMO1', name: 'Apex Pro TKL (2023)', kind: 'Keyboard', product_id: 0x1628, status: { extra: {} }, own: null, capabilities: ['lighting', 'per_key', 'settings'],
+      settings: [
+        { descriptor: { id: 'actuation', label: 'Actuation point', description: 'How far a key travels before it registers (0.1 mm units)', kind: { type: 'range', min: 1, max: 40, step: 1, unit: null }, verification: 'hardware' }, value: { int: 15 } },
+        { descriptor: { id: 'brightness', label: 'Hardware brightness', description: '', kind: { type: 'range', min: 0, max: 100, step: 1, unit: '%' }, verification: 'reference' }, value: { int: 100 } },
+      ] },
+    { key: '1038:1836:DEMO2', name: 'Aerox 3 Wireless (2.4 GHz)', kind: 'Mouse', product_id: 0x1838, status: { battery_percent: 64, charging: false, extra: { firmware: '1.4.3' } }, own: null, capabilities: ['lighting', 'settings'],
+      settings: [
+        { descriptor: { id: 'sensitivity', label: 'DPI stages', description: 'Cycled with the DPI button', kind: { type: 'dpi_stages', min: 100, max: 18000, step: 100, max_stages: 5 }, verification: 'reference' }, value: { dpi: [400, 800, 1600] } },
+        { descriptor: { id: 'polling_rate', label: 'Polling rate', description: '', kind: { type: 'choice', options: [{ id: '125', label: '125 Hz' }, { id: '250', label: '250 Hz' }, { id: '500', label: '500 Hz' }, { id: '1000', label: '1000 Hz' }] }, verification: 'reference' }, value: { choice: '1000' } },
+        { descriptor: { id: 'colors', label: 'Zone colors', description: '', kind: { type: 'color_zones', zones: ['top', 'middle', 'bottom'] }, verification: 'reference' }, value: { colors: [{ r: 255, g: 0, b: 80 }, { r: 255, g: 106, b: 19 }, { r: 0, g: 160, b: 255 }] } },
+        { descriptor: { id: 'sleep_timer', label: 'Sleep after', description: 'Minutes of inactivity', kind: { type: 'range', min: 1, max: 20, step: 1, unit: ' min' }, verification: 'reference' }, value: { int: 5 } },
+        { descriptor: { id: 'buttons', label: 'Buttons', description: '', kind: { type: 'button_map', buttons: ['button4', 'button5', 'button6'], actions: ['button4', 'button5', 'button6', 'dpi', 'disabled', 'PageUp', 'PageDown'] }, verification: 'guess' }, value: { buttons: { button6: 'dpi' } } },
+        { descriptor: { id: 'save', label: 'Save to mouse memory', description: 'Keep these settings without the daemon', kind: { type: 'action' }, verification: 'reference' }, value: null },
+      ] },
+    { key: '1038:12e0:DEMO3', name: 'Arctis Nova Pro Wireless', kind: 'Headset', product_id: 0x12e0, status: { battery_percent: 18, charging: false, wireless_connected: true, chatmix: { game: 70, chat: 30 }, mic_muted: false, extra: {} }, own: null, capabilities: ['settings'],
+      settings: [
+        { descriptor: { id: 'sidetone', label: 'Sidetone', description: 'Hear your own voice', kind: { type: 'choice', options: [{ id: 'off', label: 'Off' }, { id: 'low', label: 'Low' }, { id: 'medium', label: 'Medium' }, { id: 'high', label: 'High' }] }, verification: 'reference' }, value: { choice: 'low' } },
+        { descriptor: { id: 'anc', label: 'Noise cancelling', description: '', kind: { type: 'choice', options: [{ id: 'off', label: 'Off' }, { id: 'transparency', label: 'Transparency' }, { id: 'anc', label: 'ANC' }] }, verification: 'reference' }, value: { choice: 'anc' } },
+        { descriptor: { id: 'equalizer', label: 'Equalizer', description: '10 bands', kind: { type: 'equalizer', bands_hz: [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000], min_db: -10, max_db: 10, step_db: 0.5 }, verification: 'reference' }, value: { gains: [4, 3, 1, 0, -1, 0, 1, 2, 3, 2] } },
+        { descriptor: { id: 'inactive_time', label: 'Auto-off', description: 'Minutes', kind: { type: 'range', min: 0, max: 90, step: 15, unit: ' min' }, verification: 'reference' }, value: { int: 30 } },
+        { descriptor: { id: 'lights', label: 'Headset lights', description: '', kind: { type: 'toggle' }, verification: 'guess' }, value: { bool: true } },
+      ] },
+  ],
+};
+function demoSnapshot() {
+  return { version: '0.1.5', daemon: true, active_profile: demo.profiles.find(p => p.active)?.name || null, warnings: [], lighting: demo.lighting,
+    devices: demo.devices.map(d => ({ key: d.key, name: d.name, kind: d.kind, product_id: d.product_id, status: d.status,
+      lighting: d.capabilities.includes('lighting') ? (d.own || demo.lighting) : null, follows_global_lighting: !d.own, capabilities: d.capabilities })) };
+}
+async function demoCall(cmd) {
+  await new Promise(r => setTimeout(r, 60));
+  const find = sel => demo.devices.find(d => d.key === sel) || (() => { throw new Error(`no device ${sel}`); })();
+  switch (cmd.cmd) {
+    case 'status': case 'refresh': return demoSnapshot();
+    case 'settings': { const d = find(cmd.device); return { device: d.key, name: d.name, settings: d.settings }; }
+    case 'set': { const d = find(cmd.device); const s = d.settings.find(s => s.descriptor.id === cmd.setting); if (cmd.value !== 'trigger') s.value = cmd.value; return { device: d.key, setting: cmd.setting }; }
+    case 'lighting': {
+      if (!cmd.device) { if (cmd.effect) demo.lighting.effect = cmd.effect; if (cmd.brightness != null) demo.lighting.brightness = cmd.brightness; }
+      else { const d = find(cmd.device); if (cmd.follow_global) d.own = null; else { d.own = d.own || JSON.parse(JSON.stringify(demo.lighting)); if (cmd.effect) d.own.effect = cmd.effect; if (cmd.brightness != null) d.own.brightness = cmd.brightness; } }
+      return demoSnapshot();
+    }
+    case 'profile_list': return demo.profiles;
+    case 'profile_save': if (!demo.profiles.some(p => p.name === cmd.name)) demo.profiles.push({ name: cmd.name, description: null, apps: [], active: false }); return { saved: cmd.name };
+    case 'profile_load': demo.profiles.forEach(p => p.active = p.name === cmd.name); return demoSnapshot();
+    case 'profile_delete': demo.profiles = demo.profiles.filter(p => p.name !== cmd.name); return { deleted: cmd.name };
+    case 'profile_apps': demo.profiles.find(p => p.name === cmd.name).apps = cmd.apps; return { profile: cmd.name };
+    case 'moments_status': return demo.moments;
+    case 'moments_enable': demo.moments.enabled = cmd.enabled; demo.moments.recording = cmd.enabled; if (cmd.replay_seconds) demo.moments.replay_seconds = cmd.replay_seconds; return demo.moments;
+    case 'moments_save': return { saved_to: demo.moments.output_dir };
+    default: throw new Error(`demo: ${cmd.cmd} not simulated`);
+  }
+}
+
+(async () => { await refresh(); await render(); })();
 </script>
 </body>
 </html>
