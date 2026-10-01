@@ -193,13 +193,20 @@ impl SettingDescriptor {
                     .map(|g| g.parse().map_err(|_| self.invalid(g, "expected a gain in dB")))
                     .collect::<Result<_>>()?,
             ),
-            SettingKind::ButtonMap { .. } => {
+            SettingKind::ButtonMap { buttons, actions } => {
+                // Names are matched case-insensitively and stored in their canonical spelling.
+                let canonical = |list: &[String], name: &str| {
+                    list.iter()
+                        .find(|candidate| candidate.eq_ignore_ascii_case(name))
+                        .cloned()
+                        .unwrap_or_else(|| name.to_string())
+                };
                 let mut map = BTreeMap::new();
                 for pair in split_list(input) {
                     let (button, action) = pair
                         .split_once('=')
                         .ok_or_else(|| self.invalid(pair, "expected button=action"))?;
-                    map.insert(button.trim().to_string(), action.trim().to_string());
+                    map.insert(canonical(buttons, button.trim()), canonical(actions, action.trim()));
                 }
                 SettingValue::Buttons(map)
             }
@@ -474,6 +481,10 @@ mod tests {
             },
         );
         assert!(d.parse_value("button1=button2, button2=disabled").is_ok());
+        assert_eq!(
+            d.parse_value("BUTTON1=Disabled").unwrap(),
+            SettingValue::Buttons(BTreeMap::from([("button1".to_string(), "disabled".to_string())]))
+        );
         assert!(d.parse_value("button9=disabled").is_err());
         assert!(d.parse_value("button1=fly").is_err());
     }
