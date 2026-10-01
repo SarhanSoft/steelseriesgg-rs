@@ -333,6 +333,42 @@ pub async fn profile_command(command: Command, done: &str) -> Result<()> {
     Ok(())
 }
 
+/// `ssgg moments ...`
+pub async fn moments(command: Command) -> Result<()> {
+    let saving = matches!(command, Command::MomentsSave);
+    let (value, daemon) = call(command).await?;
+    if saving {
+        println!(
+            "Clip saved to {}",
+            value["saved_to"].as_str().unwrap_or("the Moments folder")
+        );
+        return Ok(());
+    }
+    let status: steelseries_gg::moments::MomentsStatus = decode(value)?;
+    println!(
+        "Replay buffer: {} ({} s), clips go to {}",
+        if status.recording {
+            "recording".green()
+        } else if status.enabled {
+            "enabled, not running".yellow()
+        } else {
+            "off".normal()
+        },
+        status.replay_seconds,
+        status.output_dir
+    );
+    if let Some(error) = status.last_error {
+        println!("{} {error}", "problem:".yellow());
+    }
+    if status.enabled && !daemon {
+        println!(
+            "{}",
+            "The buffer runs inside the daemon: systemctl --user restart ssgg".dimmed()
+        );
+    }
+    Ok(())
+}
+
 /// `ssgg ui` — open the control panel of the running daemon in a browser.
 pub async fn open_ui() -> Result<()> {
     if control::send(&Command::Ping).await?.is_none() {

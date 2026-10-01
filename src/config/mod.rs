@@ -59,6 +59,30 @@ pub struct Config {
 
     /// Local control API (CLI <-> daemon, web control panel)
     pub control: ControlConfig,
+
+    /// Instant-replay clips through gpu-screen-recorder
+    pub moments: crate::moments::MomentsConfig,
+
+    /// Automatic profile switching while linked programs run
+    pub autoswitch: AutoSwitchConfig,
+}
+
+/// `[autoswitch]` settings.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
+pub struct AutoSwitchConfig {
+    pub enabled: bool,
+    /// Show a desktop notification when the profile changes automatically.
+    pub notify: bool,
+}
+
+impl Default for AutoSwitchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            notify: true,
+        }
+    }
 }
 
 /// Local control API settings. The API listens on 127.0.0.1 only and requires a per-session

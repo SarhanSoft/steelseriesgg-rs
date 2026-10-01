@@ -22,13 +22,16 @@ use tracing::{debug, info, warn};
 pub use command::{Command, DeviceSnapshot, EngineSnapshot, ProfileSummary, SettingEntry, SettingsView};
 pub use state::{DeviceRecord, EngineState, Lighting};
 
+use crate::autoswitch::{AutoSwitch, ProcessWatcher, Rule};
+use crate::config::Config;
 use crate::devices::headsets::Headset;
 use crate::devices::key_mapping::KeyId;
 use crate::devices::keyboards::Keyboard;
 use crate::devices::mice::Mouse;
 use crate::devices::settings::{Configurable, DeviceStatus, SettingDescriptor, SettingKind, SettingValue};
 use crate::devices::{DeviceInfo, DeviceManager, DeviceType};
-use crate::notify::{self, BatteryWatch};
+use crate::moments::MomentsRecorder;
+use crate::notify::{self, BatteryWatch, Urgency};
 use crate::profiles::{DeviceProfile, Profile, ProfileManager};
 use crate::rgb::{Color, Effect, RgbController};
 use crate::{Error, Result};
@@ -41,6 +44,8 @@ const FRAME_INTERVAL: Duration = Duration::from_millis(33);
 const STATUS_INTERVAL: Duration = Duration::from_secs(10);
 /// How often dirty state is flushed to disk.
 const SAVE_INTERVAL: Duration = Duration::from_secs(3);
+/// How often running programs are checked for automatic profile switching.
+const AUTOSWITCH_INTERVAL: Duration = Duration::from_secs(2);
 
 /// An opened device of any family.
 pub enum DeviceHandle {
@@ -174,6 +179,8 @@ struct Inner {
     open_failures: HashMap<String, String>,
     /// Time base for flashing overlays.
     epoch: Instant,
+    config: Config,
+    moments: MomentsRecorder,
 }
 
 /// Handles for the daemon's background loops; dropping it does not stop them, call
@@ -202,9 +209,14 @@ impl Engine {
     /// `daemon` marks the long-lived engine; a one-shot CLI engine passes `false`.
     pub async fn open(daemon: bool) -> Result<Arc<Self>> {
         let mut manager = DeviceManager::new()?;
-        if let Ok(config) = crate::config::Config::load_async().await {
-            manager.set_device_override(config.device);
-        }
+        let config = match Config::load_async().await {
+            Ok(config) => config,
+            Err(e) => {
+                warn!("config.toml is invalid ({e}); using defaults");
+                Config::default()
+            }
+        };
+        manager.set_device_override(config.device.clone());
         let profiles = match ProfileManager::new().await {
             Ok(profiles) => Some(profiles),
             Err(e) => {
@@ -222,6 +234,8 @@ impl Engine {
                 overlays: Vec::new(),
                 open_failures: HashMap::new(),
                 epoch: Instant::now(),
+                moments: MomentsRecorder::new(config.moments.clone()),
+                config,
             }),
             daemon,
             started: Instant::now(),
@@ -322,6 +336,19 @@ impl Engine {
 
         let engine = Arc::clone(self);
         handles.push(tokio::spawn(async move {
+            let mut watcher = ProcessWatcher::new();
+            let mut auto = AutoSwitch::default();
+            let mut ticker = tokio::time::interval(AUTOSWITCH_INTERVAL);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                ticker.tick().await;
+                engine.inner.lock().await.moments.supervise();
+                engine.autoswitch_tick(&mut watcher, &mut auto).await;
+            }
+        }));
+
+        let engine = Arc::clone(self);
+        handles.push(tokio::spawn(async move {
             let mut ticker = tokio::time::interval(SAVE_INTERVAL);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
@@ -334,6 +361,53 @@ impl Engine {
         }));
 
         BackgroundTasks { handles }
+    }
+
+    /// One automatic-profile-switching step (daemon loop).
+    async fn autoswitch_tick(&self, watcher: &mut ProcessWatcher, auto: &mut AutoSwitch) {
+        let (rules, current, fallback, enabled, notify_on_switch) = {
+            let inner = self.inner.lock().await;
+            let rules: Vec<Rule> = inner
+                .profiles
+                .as_ref()
+                .map(|p| {
+                    let mut rules: Vec<Rule> = p
+                        .all()
+                        .values()
+                        .filter(|profile| !profile.apps.is_empty())
+                        .map(|profile| Rule {
+                            profile: profile.name.clone(),
+                            apps: profile.apps.clone(),
+                        })
+                        .collect();
+                    rules.sort_by(|a, b| a.profile.cmp(&b.profile));
+                    rules
+                })
+                .unwrap_or_default();
+            (
+                rules,
+                inner.state.active_profile.clone(),
+                inner.config.default_profile.clone(),
+                inner.config.autoswitch.enabled,
+                inner.config.autoswitch.notify,
+            )
+        };
+        if !enabled || rules.is_empty() {
+            return;
+        }
+        let running = tokio::task::block_in_place(|| watcher.running());
+        let Some(target) = auto.decide(current.as_deref(), &rules, &running, fallback.as_deref()) else {
+            return;
+        };
+        match self.execute(Command::ProfileLoad { name: target.clone() }).await {
+            Ok(_) => {
+                info!("Auto-switched to profile {target}");
+                if notify_on_switch {
+                    notify::send("Profile switched", &target, Urgency::Low);
+                }
+            }
+            Err(e) => warn!("Automatic switch to {target} failed: {e}"),
+        }
     }
 
     /// Latest status reading for every device that reports one, keyed by device key.
@@ -661,6 +735,32 @@ impl Inner {
                     self.state_dirty = true;
                 }
                 Ok(json!({ "deleted": name }))
+            }
+            Command::MomentsSave => {
+                let dir = self.moments.save_clip()?;
+                notify::send("Clip saved", &dir.to_string_lossy(), Urgency::Low);
+                Ok(json!({ "saved_to": dir }))
+            }
+            Command::MomentsStatus => Ok(serde_json::to_value(self.moments.status())?),
+            Command::MomentsEnable {
+                enabled,
+                replay_seconds,
+            } => {
+                let mut config = self.moments.config().clone();
+                config.enabled = enabled;
+                if let Some(seconds) = replay_seconds {
+                    config.replay_seconds = seconds.clamp(5, 1200);
+                }
+                self.moments.set_config(config.clone());
+                if daemon && enabled {
+                    self.moments.supervise();
+                }
+                // Persist to config.toml so the choice survives a restart.
+                let mut file_config = Config::load().unwrap_or_default();
+                file_config.moments = config;
+                file_config.save()?;
+                self.config.moments = file_config.moments.clone();
+                Ok(serde_json::to_value(self.moments.status())?)
             }
             Command::ProfileApps { name, apps } => {
                 let profiles = self.profiles_mut()?;

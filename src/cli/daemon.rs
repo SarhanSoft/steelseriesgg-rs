@@ -91,7 +91,6 @@ fn start_gamesense(config: &Config, engine: std::sync::Arc<Engine>) {
                 });
             })
             .await;
-        info!("GameSense server listening on {bind}:{port}");
         if let Err(e) = server.run().await {
             warn!("GameSense server stopped: {e}");
         }

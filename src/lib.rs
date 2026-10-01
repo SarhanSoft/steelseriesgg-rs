@@ -14,6 +14,7 @@
 //! - Keyboards: Apex Pro, Apex 3 TKL, and more
 //! - Headsets: Arctis Nova Pro, Arctis 7/9, and more
 
+pub mod autoswitch;
 pub mod config;
 pub mod device_state;
 pub mod devices;
@@ -22,6 +23,7 @@ pub mod engine;
 pub mod error;
 pub mod fs_utils;
 pub mod gamesense;
+pub mod moments;
 pub mod notify;
 pub mod performance;
 pub mod pollrate;

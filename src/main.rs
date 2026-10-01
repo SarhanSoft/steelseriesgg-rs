@@ -81,6 +81,12 @@ enum Commands {
     /// Open the control panel in a browser (needs the daemon)
     Ui,
 
+    /// Instant-replay clips (GG Moments) via gpu-screen-recorder
+    Moments {
+        #[command(subcommand)]
+        action: MomentsAction,
+    },
+
     /// Control RGB lighting (all devices in sync unless --device is given)
     Rgb {
         /// Only this device (key, type or name); omit for synced lighting on every device
@@ -284,6 +290,22 @@ enum RgbAction {
         #[command(subcommand)]
         action: PerKeyAction,
     },
+}
+
+#[derive(Subcommand)]
+enum MomentsAction {
+    /// Save the last N seconds as a clip (bind this to a key)
+    Save,
+    /// Show whether the replay buffer is running
+    Status,
+    /// Keep a replay buffer running while the daemon runs
+    Enable {
+        /// Seconds to keep (5-1200)
+        #[arg(short, long)]
+        seconds: Option<u32>,
+    },
+    /// Stop the replay buffer
+    Disable,
 }
 
 #[derive(Subcommand)]
@@ -704,6 +726,23 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Set { device, setting, value } => cli::set(device, setting, value).await?,
 
         Commands::Ui => cli::open_ui().await?,
+
+        Commands::Moments { action } => {
+            use steelseries_gg::engine::Command;
+            let command = match action {
+                MomentsAction::Save => Command::MomentsSave,
+                MomentsAction::Status => Command::MomentsStatus,
+                MomentsAction::Enable { seconds } => Command::MomentsEnable {
+                    enabled: true,
+                    replay_seconds: seconds,
+                },
+                MomentsAction::Disable => Command::MomentsEnable {
+                    enabled: false,
+                    replay_seconds: None,
+                },
+            };
+            cli::moments(command).await?;
+        }
 
         Commands::Rgb { device, action } => {
             cmd_rgb(device, action).await?;

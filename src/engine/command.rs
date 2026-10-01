@@ -74,6 +74,15 @@ pub enum Command {
         name: String,
         apps: Vec<String>,
     },
+    /// Save the instant-replay buffer to a clip.
+    MomentsSave,
+    /// Replay buffer state.
+    MomentsStatus,
+    /// Turn the replay buffer on or off (and optionally change its length).
+    MomentsEnable {
+        enabled: bool,
+        replay_seconds: Option<u32>,
+    },
 }
 
 impl Command {
@@ -81,7 +90,7 @@ impl Command {
     pub fn is_read_only(&self) -> bool {
         matches!(
             self,
-            Command::Ping | Command::Status | Command::Settings { .. } | Command::ProfileList
+            Command::Ping | Command::Status | Command::Settings { .. } | Command::ProfileList | Command::MomentsStatus
         )
     }
 }
