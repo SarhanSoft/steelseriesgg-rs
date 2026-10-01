@@ -33,7 +33,7 @@ use tabled::{Table, Tabled};
 #[cfg(feature = "audio")]
 use steelseries_gg::audio::{AudioMixer, Channel};
 
-#[cfg(feature = "sonar")]
+#[cfg(all(feature = "sonar", not(target_os = "linux")))]
 use steelseries_gg::audio::SonarClient;
 
 /// SteelSeries GG for Linux - Control your SteelSeries devices
@@ -688,13 +688,13 @@ fn parse_channel(s: &str) -> Option<Channel> {
 }
 
 /// Convert a volume level (0-100) to a normalized float (0.0-1.0)
-#[cfg(any(feature = "audio", feature = "sonar"))]
+#[cfg(any(feature = "audio", all(feature = "sonar", not(target_os = "linux"))))]
 fn normalize_volume(level: u8) -> f32 {
     (level.min(100) as f32) / 100.0
 }
 
 /// Parse and validate a Sonar channel name
-#[cfg(feature = "sonar")]
+#[cfg(all(feature = "sonar", not(target_os = "linux")))]
 fn parse_sonar_channel<'a>(channel: &'a str, valid_channels: &[&str]) -> Result<&'a str> {
     let channel_lower = channel.to_ascii_lowercase();
     if valid_channels.contains(&channel_lower.as_str()) {
@@ -1602,6 +1602,21 @@ fn cmd_audio(action: AudioAction) -> Result<()> {
 
 #[cfg(feature = "sonar")]
 async fn cmd_sonar(action: SonarAction) -> Result<()> {
+    // SteelSeries Sonar is a Windows application; there is nothing to talk to on Linux.
+    #[cfg(target_os = "linux")]
+    {
+        let _ = action;
+        Err(Error::Unsupported(
+            "SteelSeries Sonar only exists on Windows. On Linux the same features come from the built-in              mixer: `ssgg mixer enable`, then `ssgg mixer` (or the Audio page of `ssgg ui`)."
+                .to_string(),
+        ))
+    }
+    #[cfg(not(target_os = "linux"))]
+    cmd_sonar_client(action).await
+}
+
+#[cfg(all(feature = "sonar", not(target_os = "linux")))]
+async fn cmd_sonar_client(action: SonarAction) -> Result<()> {
     match action {
         SonarAction::Status => {
             println!("Connecting to SteelSeries Sonar...");

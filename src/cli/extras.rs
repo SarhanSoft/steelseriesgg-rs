@@ -312,9 +312,7 @@ pub async fn record_macro(key: String, stop_key: Option<String>, timeout: u32, p
     let stop_key = stop_key.map(|k| InputKey::parse(&k)).transpose()?;
     println!(
         "Recording from SteelSeries devices: press {} to stop (or wait {timeout} s)...",
-        stop_key
-            .map(|k| k.to_string())
-            .unwrap_or_else(|| "Esc".to_string())
+        stop_key.map(|k| k.to_string()).unwrap_or_else(|| "Esc".to_string())
     );
     let (value, _) = call(Command::MacroRecord {
         stop_key,
