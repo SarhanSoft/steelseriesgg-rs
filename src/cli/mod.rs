@@ -23,10 +23,14 @@ pub async fn call(command: Command) -> Result<(Value, bool)> {
         command,
         Command::Lighting { .. } | Command::ProfileLoad { .. } | Command::Refresh
     );
+    let draws_oled = matches!(command, Command::Oled { .. });
     let engine = Engine::open(false).await?;
     let value = engine.execute(command).await?;
     if renders {
         engine.render_once().await;
+    }
+    if draws_oled {
+        engine.render_oled_once().await;
     }
     engine.save().await;
     Ok((value, false))
@@ -330,6 +334,20 @@ pub async fn profile_list() -> Result<()> {
 pub async fn profile_command(command: Command, done: &str) -> Result<()> {
     call(command).await?;
     println!("{done}");
+    Ok(())
+}
+
+/// `ssgg oled ...`
+pub async fn oled(command: Command) -> Result<()> {
+    let (_, daemon) = call(command).await?;
+    println!("OLED updated.");
+    if !daemon {
+        println!(
+            "{}",
+            "Drawn once. Clocks, stats, animations and timed messages need the daemon: systemctl --user start ssgg"
+                .dimmed()
+        );
+    }
     Ok(())
 }
 

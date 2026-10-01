@@ -74,6 +74,18 @@ pub enum Command {
         name: String,
         apps: Vec<String>,
     },
+    /// Keyboard OLED: show `content` for `seconds` (0 = until replaced), change the idle
+    /// screen, or `clear` temporary content.
+    Oled {
+        #[serde(default)]
+        content: Option<super::screen::ScreenContent>,
+        #[serde(default)]
+        seconds: Option<u32>,
+        #[serde(default)]
+        idle: Option<super::screen::IdleScreen>,
+        #[serde(default)]
+        clear: bool,
+    },
     /// Save the instant-replay buffer to a clip.
     MomentsSave,
     /// Replay buffer state.

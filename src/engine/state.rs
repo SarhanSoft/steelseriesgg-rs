@@ -59,6 +59,9 @@ pub struct EngineState {
     pub lighting: Lighting,
     #[serde(default)]
     pub active_profile: Option<String>,
+    /// What OLED keyboards show when nothing temporary is on.
+    #[serde(default)]
+    pub oled_idle: super::screen::IdleScreen,
 }
 
 impl Default for EngineState {
@@ -68,6 +71,7 @@ impl Default for EngineState {
             devices: BTreeMap::new(),
             lighting: Lighting::default(),
             active_profile: None,
+            oled_idle: super::screen::IdleScreen::default(),
         }
     }
 }

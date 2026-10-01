@@ -8,6 +8,7 @@
 
 pub mod command;
 pub mod control;
+pub mod screen;
 pub mod state;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -32,9 +33,11 @@ use crate::devices::settings::{Configurable, DeviceStatus, SettingDescriptor, Se
 use crate::devices::{DeviceInfo, DeviceManager, DeviceType};
 use crate::moments::MomentsRecorder;
 use crate::notify::{self, BatteryWatch, Urgency};
+use crate::oled::OledFrame;
 use crate::profiles::{DeviceProfile, Profile, ProfileManager};
 use crate::rgb::{Color, Effect, RgbController};
 use crate::{Error, Result};
+use screen::ScreenManager;
 
 /// How often the daemon rescans for plugged/unplugged devices.
 const HOTPLUG_INTERVAL: Duration = Duration::from_secs(2);
@@ -46,6 +49,10 @@ const STATUS_INTERVAL: Duration = Duration::from_secs(10);
 const SAVE_INTERVAL: Duration = Duration::from_secs(3);
 /// How often running programs are checked for automatic profile switching.
 const AUTOSWITCH_INTERVAL: Duration = Duration::from_secs(2);
+/// OLED refresh tick; unchanged frames are not re-sent.
+const OLED_INTERVAL: Duration = Duration::from_millis(100);
+/// How long a temporary OLED screen stays when no duration is given.
+const OLED_DEFAULT_SECONDS: u32 = 5;
 
 /// An opened device of any family.
 pub enum DeviceHandle {
@@ -131,6 +138,8 @@ struct Slot {
     status_read_at: Option<Instant>,
     battery_watch: BatteryWatch,
     write_failures: u32,
+    oled_size: Option<(u32, u32)>,
+    last_oled: Option<OledFrame>,
 }
 
 impl Slot {
@@ -148,6 +157,9 @@ impl Slot {
         }
         if !self.handle.descriptors().is_empty() {
             caps.push("settings".to_string());
+        }
+        if self.oled_size.is_some() {
+            caps.push("oled".to_string());
         }
         caps
     }
@@ -181,6 +193,7 @@ struct Inner {
     epoch: Instant,
     config: Config,
     moments: MomentsRecorder,
+    screens: ScreenManager,
 }
 
 /// Handles for the daemon's background loops; dropping it does not stop them, call
@@ -224,11 +237,14 @@ impl Engine {
                 None
             }
         };
+        let state = EngineState::load();
+        let screens = ScreenManager::new(state.oled_idle.clone());
         let engine = Arc::new(Self {
             inner: Mutex::new(Inner {
                 manager,
                 slots: BTreeMap::new(),
-                state: EngineState::load(),
+                state,
+                screens,
                 state_dirty: false,
                 profiles,
                 overlays: Vec::new(),
@@ -290,6 +306,12 @@ impl Engine {
         inner.render_frame(Instant::now()).await;
     }
 
+    /// Draw the current OLED frame on every keyboard with a screen (one-shot CLI engines).
+    pub async fn render_oled_once(&self) {
+        let mut inner = self.inner.lock().await;
+        inner.render_oled(Instant::now()).await;
+    }
+
     /// Persist state now (the daemon also does it periodically and on shutdown).
     pub async fn save(&self) {
         let mut inner = self.inner.lock().await;
@@ -320,6 +342,17 @@ impl Engine {
                 ticker.tick().await;
                 let mut inner = engine.inner.lock().await;
                 inner.render_frame(Instant::now()).await;
+            }
+        }));
+
+        let engine = Arc::clone(self);
+        handles.push(tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(OLED_INTERVAL);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                ticker.tick().await;
+                let mut inner = engine.inner.lock().await;
+                inner.render_oled(Instant::now()).await;
             }
         }));
 
@@ -503,7 +536,13 @@ impl Inner {
             match self.open(&info) {
                 Ok(handle) => {
                     self.open_failures.remove(&key);
+                    let oled_size = match &handle {
+                        DeviceHandle::Keyboard(keyboard) => keyboard.oled_size(),
+                        _ => None,
+                    };
                     let mut slot = Slot {
+                        oled_size,
+                        last_oled: None,
                         model_key: model_key(&info),
                         info,
                         handle,
@@ -736,6 +775,35 @@ impl Inner {
                 }
                 Ok(json!({ "deleted": name }))
             }
+            Command::Oled {
+                content,
+                seconds,
+                idle,
+                clear,
+            } => {
+                if !self.slots.values().any(|s| s.oled_size.is_some()) {
+                    return Err(Error::Unsupported(
+                        "no connected keyboard has an OLED screen".to_string(),
+                    ));
+                }
+                if let Some(idle) = idle {
+                    self.screens.set_idle(idle.clone())?;
+                    self.state.oled_idle = idle;
+                    self.state_dirty = true;
+                }
+                if clear {
+                    self.screens.clear_temporary();
+                }
+                if let Some(content) = content {
+                    let seconds = seconds.unwrap_or(OLED_DEFAULT_SECONDS);
+                    let duration = (seconds > 0).then(|| Duration::from_secs(u64::from(seconds)));
+                    self.screens.show(&content, duration)?;
+                }
+                for slot in self.slots.values_mut() {
+                    slot.last_oled = None;
+                }
+                Ok(json!({ "idle": self.state.oled_idle }))
+            }
             Command::MomentsSave => {
                 let dir = self.moments.save_clip()?;
                 notify::send("Clip saved", &dir.to_string_lossy(), Urgency::Low);
@@ -898,6 +966,36 @@ impl Inner {
                     slot.write_failures += 1;
                     if slot.write_failures == 1 || slot.write_failures.is_multiple_of(300) {
                         warn!("Lighting write to {} failed: {e}", slot.info.name);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Send the current OLED frame to every keyboard with a screen, when it changed.
+    async fn render_oled(&mut self, now: Instant) {
+        if !self.slots.values().any(|s| s.oled_size.is_some()) {
+            return;
+        }
+        let frame = self.screens.frame(now);
+        for slot in self.slots.values_mut() {
+            if slot.oled_size.is_none() || slot.last_oled == frame {
+                continue;
+            }
+            let Some(frame) = &frame else {
+                // Nothing to show: leave the keyboard's last image (no command hands it back).
+                slot.last_oled = None;
+                continue;
+            };
+            let DeviceHandle::Keyboard(keyboard) = &mut slot.handle else {
+                continue;
+            };
+            match keyboard.draw_oled(frame).await {
+                Ok(()) => slot.last_oled = Some(frame.clone()),
+                Err(e) => {
+                    slot.write_failures += 1;
+                    if slot.write_failures == 1 || slot.write_failures.is_multiple_of(300) {
+                        warn!("OLED write to {} failed: {e}", slot.info.name);
                     }
                 }
             }

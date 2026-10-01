@@ -81,6 +81,12 @@ enum Commands {
     /// Open the control panel in a browser (needs the daemon)
     Ui,
 
+    /// Keyboard OLED screen: text, images, clock, system stats, now playing
+    Oled {
+        #[command(subcommand)]
+        action: OledAction,
+    },
+
     /// Instant-replay clips (GG Moments) via gpu-screen-recorder
     Moments {
         #[command(subcommand)]
@@ -290,6 +296,39 @@ enum RgbAction {
         #[command(subcommand)]
         action: PerKeyAction,
     },
+}
+
+#[derive(Subcommand)]
+enum OledAction {
+    /// Show lines of text
+    Text {
+        /// One argument per line
+        #[arg(required = true)]
+        lines: Vec<String>,
+        /// Seconds to show it (0 = until replaced)
+        #[arg(short, long)]
+        seconds: Option<u32>,
+    },
+    /// Show an image or animated GIF (scaled and dithered to the screen)
+    Image {
+        path: std::path::PathBuf,
+        /// Seconds to show it (0 = until replaced)
+        #[arg(short, long)]
+        seconds: Option<u32>,
+        /// Use it as the idle screen instead of showing it once
+        #[arg(long)]
+        idle: bool,
+    },
+    /// Idle screen: the time
+    Clock,
+    /// Idle screen: CPU and memory use
+    Stats,
+    /// Idle screen: the track playing in any MPRIS player (via playerctl)
+    Nowplaying,
+    /// Stop drawing; the keyboard keeps its last image
+    Off,
+    /// Remove temporary content and return to the idle screen
+    Clear,
 }
 
 #[derive(Subcommand)]
@@ -726,6 +765,37 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Set { device, setting, value } => cli::set(device, setting, value).await?,
 
         Commands::Ui => cli::open_ui().await?,
+
+        Commands::Oled { action } => {
+            use steelseries_gg::engine::Command;
+            use steelseries_gg::engine::screen::{IdleScreen, ScreenContent};
+            let oled = |content, seconds, idle, clear| Command::Oled {
+                content,
+                seconds,
+                idle,
+                clear,
+            };
+            let command = match action {
+                OledAction::Text { lines, seconds } => oled(Some(ScreenContent::Text { lines }), seconds, None, false),
+                OledAction::Image { path, seconds, idle } => {
+                    let path = std::fs::canonicalize(&path)
+                        .map_err(|e| Error::InvalidConfig(format!("{}: {e}", path.display())))?
+                        .to_string_lossy()
+                        .into_owned();
+                    if idle {
+                        oled(None, None, Some(IdleScreen::Image { path }), true)
+                    } else {
+                        oled(Some(ScreenContent::Image { path }), seconds, None, false)
+                    }
+                }
+                OledAction::Clock => oled(None, None, Some(IdleScreen::Clock), true),
+                OledAction::Stats => oled(None, None, Some(IdleScreen::Stats), true),
+                OledAction::Nowplaying => oled(None, None, Some(IdleScreen::NowPlaying), true),
+                OledAction::Off => oled(None, None, Some(IdleScreen::Off), true),
+                OledAction::Clear => oled(None, None, None, true),
+            };
+            cli::oled(command).await?;
+        }
 
         Commands::Moments { action } => {
             use steelseries_gg::engine::Command;
