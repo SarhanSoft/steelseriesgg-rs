@@ -30,6 +30,16 @@ pub fn model_for_product_id(product_id: u16) -> Option<&'static MouseModel> {
 /// Mouse-specific functionality on top of the uniform settings model.
 pub trait Mouse: Device + Configurable {
     fn model(&self) -> &'static MouseModel;
+
+    /// Names of the LED zones the daemon can drive frame by frame (empty = none).
+    fn color_zone_names(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Set every LED zone at once, for synced lighting animation.
+    fn set_zone_colors_direct(&mut self, _colors: &[crate::rgb::Color]) -> Result<()> {
+        Err(Error::Unsupported("direct zone colors".to_string()))
+    }
 }
 
 /// Wrap an opened HID handle in the right mouse implementation.

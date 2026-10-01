@@ -8,6 +8,7 @@ use crate::Result;
 
 /// USB polling rate configuration.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct PollRateConfig {
     /// Mouse polling rate in Hz (125, 500, 1000, 2000, or 4000)
     pub mouse_hz: Option<u32>,
@@ -23,6 +24,7 @@ pub struct PollRateConfig {
 /// auto-detection picks the wrong one on hardware the ranking hasn't been verified against.
 /// Both fields default to `None`, in which case auto-detection runs unchanged.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct DeviceConfig {
     /// Pin the control endpoint to an exact HID path (as reported by `ssgg devices`).
     /// Takes priority over `control_usage_page` when both are set.
@@ -32,8 +34,9 @@ pub struct DeviceConfig {
     pub control_usage_page: Option<u16>,
 }
 
-/// Application configuration.
+/// Application configuration. Every key is optional; missing ones take their defaults.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct Config {
     /// GameSense server settings
     pub gamesense: GameSenseConfig,
@@ -53,10 +56,34 @@ pub struct Config {
 
     /// Manual HID device selection override
     pub device: DeviceConfig,
+
+    /// Local control API (CLI <-> daemon, web control panel)
+    pub control: ControlConfig,
+}
+
+/// Local control API settings. The API listens on 127.0.0.1 only and requires a per-session
+/// token stored in the user's runtime directory.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
+pub struct ControlConfig {
+    /// Serve the control API and web control panel from the daemon.
+    pub enabled: bool,
+    /// TCP port on 127.0.0.1.
+    pub port: u16,
+}
+
+impl Default for ControlConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            port: 27311,
+        }
+    }
 }
 
 /// GameSense server configuration.
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
 pub struct GameSenseConfig {
     /// Enable GameSense HTTP server
     pub enabled: bool,
@@ -80,6 +107,7 @@ impl Default for GameSenseConfig {
 
 /// Audio mixer configuration.
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
 #[cfg(feature = "audio")]
 pub struct AudioConfig {
     /// Enable audio mixer
@@ -105,6 +133,7 @@ impl Default for AudioConfig {
 
 /// Individual channel volume settings.
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
 #[cfg(feature = "audio")]
 pub struct ChannelVolumes {
     pub game: f32,

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SteelSeries GG</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem; background: #111; color: #eee; }
+  pre { background: #1c1c1c; padding: 1rem; border-radius: 8px; overflow: auto; }
+</style>
+</head>
+<body>
+<h1>SteelSeries GG</h1>
+<p id="msg">Loading…</p>
+<pre id="out"></pre>
+<script>
+const token = new URLSearchParams(location.hash.slice(1)).get('token') || sessionStorage.getItem('ssgg-token');
+if (token) { sessionStorage.setItem('ssgg-token', token); history.replaceState(null, '', '/'); }
+async function call(cmd) {
+  const r = await fetch('/api/command', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(cmd) });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error);
+  return j.data;
+}
+async function tick() {
+  if (!token) { document.getElementById('msg').textContent = 'Open this page with `ssgg ui`.'; return; }
+  try { const s = await call({ cmd: 'status' }); document.getElementById('msg').textContent = s.devices.length + ' device(s)'; document.getElementById('out').textContent = JSON.stringify(s, null, 2); }
+  catch (e) { document.getElementById('msg').textContent = e.message; }
+}
+tick(); setInterval(tick, 3000);
+</script>
+</body>
+</html>

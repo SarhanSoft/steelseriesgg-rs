@@ -1,7 +1,7 @@
 //! Profile management for saving and loading device configurations.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 #[cfg(unix)]
 use std::fs::OpenOptions;
 #[cfg(unix)]
@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use tracing::warn;
 
 use crate::config::Config;
+use crate::devices::settings::SettingValue;
+use crate::engine::state::Lighting;
 use crate::rgb::{Color, Effect};
 use crate::{Error, Result};
 
@@ -29,6 +31,40 @@ pub struct Profile {
     /// Headset settings.
     #[serde(default)]
     pub headset: Option<HeadsetProfile>,
+
+    /// Global lighting applied to every device without its own override.
+    #[serde(default)]
+    pub lighting: Option<Lighting>,
+
+    /// Per-model settings and lighting, keyed by model (`"1038:1628"`), so a profile applies to
+    /// any unit of that model.
+    #[serde(default)]
+    pub devices: BTreeMap<String, DeviceProfile>,
+
+    /// Applications (process names, case-insensitive) that switch to this profile while running.
+    #[serde(default)]
+    pub apps: Vec<String>,
+
+    /// Key bindings and macros for this profile (interpreted by the input engine).
+    #[serde(default)]
+    pub bindings: Option<serde_json::Value>,
+
+    /// Audio mixer configuration for this profile (interpreted by the mixer).
+    #[serde(default)]
+    pub mixer: Option<serde_json::Value>,
+}
+
+/// Saved settings for one device model inside a profile.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct DeviceProfile {
+    /// Model name when saved, for display.
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub settings: BTreeMap<String, SettingValue>,
+    /// `None` = follow the profile's global lighting.
+    #[serde(default)]
+    pub lighting: Option<Lighting>,
 }
 
 /// Keyboard-specific profile settings.
@@ -85,6 +121,11 @@ impl Profile {
             description: None,
             keyboard: None,
             headset: None,
+            lighting: None,
+            devices: BTreeMap::new(),
+            apps: Vec::new(),
+            bindings: None,
+            mixer: None,
         }
     }
 
@@ -95,6 +136,11 @@ impl Profile {
             description: Some("Default profile with standard settings".to_string()),
             keyboard: Some(KeyboardProfile::default()),
             headset: Some(HeadsetProfile::default()),
+            lighting: None,
+            devices: BTreeMap::new(),
+            apps: Vec::new(),
+            bindings: None,
+            mixer: None,
         }
     }
 }
