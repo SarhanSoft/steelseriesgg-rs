@@ -78,17 +78,17 @@ impl DeviceHandle {
     /// The uniform settings interface, when this device family provides one.
     pub fn configurable(&mut self) -> Option<&mut dyn Configurable> {
         match self {
+            DeviceHandle::Keyboard(keyboard) => Some(keyboard.as_mut()),
             DeviceHandle::Mouse(mouse) => Some(mouse.as_mut()),
             DeviceHandle::Headset(headset) => Some(headset.as_mut()),
-            DeviceHandle::Keyboard(_) => None,
         }
     }
 
     fn descriptors(&self) -> Vec<SettingDescriptor> {
         match self {
+            DeviceHandle::Keyboard(keyboard) => keyboard.setting_descriptors(),
             DeviceHandle::Mouse(mouse) => mouse.setting_descriptors(),
             DeviceHandle::Headset(headset) => headset.setting_descriptors(),
-            DeviceHandle::Keyboard(_) => Vec::new(),
         }
     }
 
@@ -1246,7 +1246,7 @@ impl Inner {
                 if slot.last_per_key && signature == slot.last_frame {
                     continue;
                 }
-                keyboard.set_key_colors(&frame).await.map(|()| (signature, true))
+                keyboard.set_all_key_colors(&frame).await.map(|()| (signature, true))
             } else {
                 if !slot.last_per_key && colors == slot.last_frame {
                     continue;

@@ -461,6 +461,12 @@ pub mod product_ids {
     pub const APEX_PRO_MINI_2024: u16 = 0x1648;
     pub const APEX_5_2024: u16 = 0x1650;
     pub const APEX_7_2024: u16 = 0x1652;
+    // Source: OpenRGB SteelSeriesDevices.h (keyboard PIDs missing above). OpenRGB names 0x1640
+    // (APEX_PRO_2024 above) "Apex Pro 3".
+    pub const APEX_M750: u16 = 0x0616;
+    /// OpenRGB: "Apex (OG)/Apex Fnatic".
+    pub const APEX_OG: u16 = 0x1202;
+    pub const APEX_350: u16 = 0x1206;
 
     // Headsets - Arctis / Arctis Nova.
     // PIDs from HeadsetControl (lib/devices/steelseries_*.hpp) and OpenRGB (Arctis 5), checked
@@ -545,7 +551,10 @@ pub fn device_type_from_product_id(product_id: u16) -> DeviceType {
         | APEX_PRO_TKL_WIRELESS_2024
         | APEX_PRO_MINI_2024
         | APEX_5_2024
-        | APEX_7_2024 => DeviceType::Keyboard,
+        | APEX_7_2024
+        | APEX_M750
+        | APEX_OG
+        | APEX_350 => DeviceType::Keyboard,
 
         pid if headsets::model_for_product_id(pid).is_some() => DeviceType::Headset,
 
@@ -582,6 +591,9 @@ pub fn device_name_from_product_id(product_id: u16) -> &'static str {
         APEX_PRO_MINI_2024 => "Apex Pro Mini (2024)",
         APEX_5_2024 => "Apex 5 (2024)",
         APEX_7_2024 => "Apex 7 (2024)",
+        APEX_M750 => "Apex M750",
+        APEX_OG => "Apex (OG) / Apex Fnatic",
+        APEX_350 => "Apex 350",
         pid => headsets::model_for_product_id(pid)
             .map(|m| m.name)
             .or_else(|| mice::model_for_product_id(pid).map(|m| m.name))
@@ -595,11 +607,15 @@ pub fn zone_count_for_product_id(product_id: u16) -> usize {
     use product_ids::*;
 
     match product_id {
-        APEX_3 => 10,
-        APEX_3_TKL => 9,
+        // [EXPERIMENTAL] (Reference: OpenRGB `STEELSERIES_TZ_LED_COUNT`)
+        APEX_3 => hid_reports::TRI_ZONE_COUNT,
+        // [EXPERIMENTAL] (Reference: OpenRGB `STEELSERIES_8Z_LED_COUNT`). Issue #173: this was 9.
+        APEX_3_TKL => hid_reports::EIGHT_ZONE_COUNT,
+        // [EXPERIMENTAL] (Reference: OpenRGB `SteelSeriesOldApexController`, 5 zones)
+        APEX_OG | APEX_350 => hid_reports::OLD_APEX_ZONE_COUNT,
         APEX_PRO_TKL_2023 | APEX_PRO_TKL_2023_WIRELESS | APEX_PRO_TKL_2023_WIRELESS_2 => 9,
-        // Zone counts for these models are unverified — 1 is a safe default until captured.
-        APEX_PRO | APEX_PRO_TKL | APEX_5 | APEX_7 | APEX_7_TKL | APEX_150 => 1,
+        // Per-key boards have no hardware zones (OpenRGB exposes one matrix zone); the whole board
+        // is one zone.
         _ => 1,
     }
 }

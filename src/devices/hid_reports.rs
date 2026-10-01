@@ -35,6 +35,10 @@ pub enum CommandCode {
     /// RGB zone control (0x21)
     RgbControl = 0x21,
     /// Brightness control (0x22)
+    ///
+    /// This is the logical code of every brightness command. This crate's legacy dialect writes
+    /// `0x22`; the OpenRGB-referenced Apex per-key and 8-zone families write `0x23` on the wire
+    /// (see [`IlluminationBrightnessCommand`]), which collides with the `PerKeyRgb` placeholder.
     Brightness = 0x22,
     /// Reactive mode (0x25)
     ReactiveMode = 0x25,
@@ -52,6 +56,43 @@ pub enum CommandCode {
     /// Actuation point control (0x2D) - EXPERIMENTAL
     /// NOTE: This command code is experimental based on hardware research.
     ActuationControl = 0x2D,
+    /// [EXPERIMENTAL] Gen 1 Apex per-key direct frame (0x3A). Reference: OpenRGB
+    /// `APEX_GEN1_PACKET_ID_DIRECT`, apex7tkl_linux `send_colors`.
+    ApexLegacyDirect = 0x3A,
+    /// [EXPERIMENTAL] Apex 2023 / Gen 3 wireless per-key direct frame (0x61). Reference: OpenRGB
+    /// `APEX_2023_PACKET_ID_DIRECT_WIRELESS`.
+    Apex2023DirectWireless = 0x61,
+    /// [EXPERIMENTAL] Apex Gen 3 initialisation (0x4B). Reference: OpenRGB `APEX_2023_PACKET_ID_INIT`.
+    Apex2023Init = 0x4B,
+    /// [EXPERIMENTAL] Illumination brightness read-back request (0xA3). Reference: OpenRGB
+    /// `APEX_PACKET_ID_GET_BRIGHTNESS`.
+    BrightnessQuery = 0xA3,
+    /// [EXPERIMENTAL] Firmware version request (0x90). Reference: OpenRGB `APEX_PACKET_ID_FIRMWARE`.
+    FirmwareQuery = 0x90,
+    /// [EXPERIMENTAL] Apex 3 tri-zone brightness (0x0A). Reference: OpenRGB `SteelSeriesApexTZoneController`.
+    TriZoneBrightness = 0x0A,
+    /// [EXPERIMENTAL] Apex 3 tri-zone colours (0x0B). Reference: OpenRGB `SteelSeriesApexTZoneController`.
+    TriZoneColor = 0x0B,
+    /// [EXPERIMENTAL] First report of the Apex 3 tri-zone save sequence (0x06); the second is `Apply`.
+    TriZoneSave = 0x06,
+    /// [EXPERIMENTAL] Old Apex / Apex 350 zone colours (0x07). Reference: OpenRGB
+    /// `SteelSeriesOldApexController`, apexctl `ID_COLORS`.
+    OldApexColor = 0x07,
+    /// [EXPERIMENTAL] Old Apex polling rate (0x04, sent as the feature report ID). Reference: apexctl `ID_POLL`.
+    OldApexPollingRate = 0x04,
+    /// [EXPERIMENTAL] Apex M750 direct frame. The M750 has no command byte at the usual offset; `0x8E`
+    /// is byte 4 of every direct frame. Reference: OpenRGB `SteelSeriesApexMController`.
+    ApexMDirect = 0x8E,
+    /// [EXPERIMENTAL] Apex M750 LED-control enable sequence; `0x85` is byte 6 of its first report.
+    ApexMEnable = 0x85,
+    /// [EXPERIMENTAL] Apex Pro TKL 2023 live actuation frame (0x38). Reference: apex-web `PROTOCOL.md`.
+    ActuationLive2023 = 0x38,
+    /// [EXPERIMENTAL] Apex Pro TKL (Gen 1) live actuation frame (0x31 0x47). Reference: apex-control
+    /// `Actuation.cs`.
+    ActuationLiveGen1 = 0x31,
+    /// [EXPERIMENTAL] Apex Pro TKL (Gen 1) live Rapid Tap on/off (0x1A). Reference: apex-control
+    /// `PROTOCOL_NOTES.md`.
+    RapidTap = 0x1A,
 }
 
 impl fmt::Display for CommandCode {
@@ -65,6 +106,21 @@ impl fmt::Display for CommandCode {
             CommandCode::PerKeyRgb => write!(f, "PERKEY_RGB_EXPERIMENTAL"),
             CommandCode::Apex2023Direct => write!(f, "APEX2023_DIRECT_EXPERIMENTAL"),
             CommandCode::ActuationControl => write!(f, "ACTUATION_CTRL_EXPERIMENTAL"),
+            CommandCode::ApexLegacyDirect => write!(f, "APEX_DIRECT_GEN1_EXPERIMENTAL"),
+            CommandCode::Apex2023DirectWireless => write!(f, "APEX2023_DIRECT_WIRELESS_EXPERIMENTAL"),
+            CommandCode::Apex2023Init => write!(f, "APEX2023_INIT_EXPERIMENTAL"),
+            CommandCode::BrightnessQuery => write!(f, "BRIGHTNESS_QUERY_EXPERIMENTAL"),
+            CommandCode::FirmwareQuery => write!(f, "FIRMWARE_QUERY_EXPERIMENTAL"),
+            CommandCode::TriZoneBrightness => write!(f, "TRIZONE_BRIGHTNESS_EXPERIMENTAL"),
+            CommandCode::TriZoneColor => write!(f, "TRIZONE_COLOR_EXPERIMENTAL"),
+            CommandCode::TriZoneSave => write!(f, "TRIZONE_SAVE_EXPERIMENTAL"),
+            CommandCode::OldApexColor => write!(f, "OLD_APEX_COLOR_EXPERIMENTAL"),
+            CommandCode::OldApexPollingRate => write!(f, "OLD_APEX_POLLING_RATE_EXPERIMENTAL"),
+            CommandCode::ApexMDirect => write!(f, "APEX_M_DIRECT_EXPERIMENTAL"),
+            CommandCode::ApexMEnable => write!(f, "APEX_M_ENABLE_EXPERIMENTAL"),
+            CommandCode::ActuationLive2023 => write!(f, "ACTUATION_LIVE_2023_EXPERIMENTAL"),
+            CommandCode::ActuationLiveGen1 => write!(f, "ACTUATION_LIVE_GEN1_EXPERIMENTAL"),
+            CommandCode::RapidTap => write!(f, "RAPID_TAP_EXPERIMENTAL"),
         }
     }
 }
@@ -84,6 +140,21 @@ impl CommandCode {
             0x23 | 0x2A => Some(CommandCode::PerKeyRgb),
             0x40 => Some(CommandCode::Apex2023Direct),
             0x2D => Some(CommandCode::ActuationControl),
+            0x3A => Some(CommandCode::ApexLegacyDirect),
+            0x61 => Some(CommandCode::Apex2023DirectWireless),
+            0x4B => Some(CommandCode::Apex2023Init),
+            0xA3 => Some(CommandCode::BrightnessQuery),
+            0x90 => Some(CommandCode::FirmwareQuery),
+            0x0A => Some(CommandCode::TriZoneBrightness),
+            0x0B => Some(CommandCode::TriZoneColor),
+            0x06 => Some(CommandCode::TriZoneSave),
+            0x07 => Some(CommandCode::OldApexColor),
+            0x04 => Some(CommandCode::OldApexPollingRate),
+            0x8E => Some(CommandCode::ApexMDirect),
+            0x85 => Some(CommandCode::ApexMEnable),
+            0x38 => Some(CommandCode::ActuationLive2023),
+            0x31 => Some(CommandCode::ActuationLiveGen1),
+            0x1A => Some(CommandCode::RapidTap),
             _ => None,
         }
     }
@@ -127,6 +198,15 @@ pub trait HidCommand {
 
     /// Get a human-readable description of the command.
     fn description(&self) -> String;
+
+    /// Whether the report starts with report ID `0x00` followed by a known command byte.
+    ///
+    /// `HidReportBuilder` checks that header only when this returns `true`. Reports framed
+    /// differently (Apex M750 frames, apexctl feature reports whose report ID is the command)
+    /// return `false`.
+    fn has_standard_header(&self) -> bool {
+        true
+    }
 }
 
 /// RGB zone control command.
@@ -931,6 +1011,990 @@ impl PerKeyRgbBuilder {
         self.key_colors.is_empty()
     }
 }
+// ===========================================================================
+// OpenRGB-referenced Apex families [EXPERIMENTAL]
+//
+// Every layout in this section is taken from a published open-source driver. None is tested on
+// hardware by this project.
+// - OpenRGB `Controllers/SteelSeriesController/` (GPL-2.0-or-later; byte facts only, no code
+//   copied): `SteelSeriesApexBaseController.h`, `SteelSeriesApexController.cpp`,
+//   `SteelSeriesApex8ZoneController.{h,cpp}`, `SteelSeriesApexTZoneController.{h,cpp}`,
+//   `SteelSeriesApexMController.cpp`, `SteelSeriesOldApexController.cpp`.
+// - apexctl `src/apexctl.c` (Apache-2.0, https://github.com/AstroSnail/apexctl): old Apex polling rate.
+// - apex-web (MIT, https://github.com/trottyva/apex-web, `PROTOCOL.md`, `index.html`,
+//   `capture-data.js`): Apex Pro TKL 2023 live actuation.
+// - apex-control (MIT, https://github.com/zunuza/apex-control, `src/ApexControl.Core/Actuation.cs`,
+//   `docs/PROTOCOL_NOTES.md`): Apex Pro TKL live actuation and Rapid Tap.
+//
+// Every buffer starts with the HID report ID and is written to the device unchanged, so the
+// command byte is the first byte the keyboard receives. `GenericKeyboard`'s legacy output path
+// inserts one more `0x00` in front of the report, so these reports must not go through it.
+// ===========================================================================
+
+/// Output report of the OpenRGB Apex controllers: report ID + 64 bytes (`STEELSERIES_PACKET_OUT_SIZE`).
+pub const APEX_OUTPUT_REPORT_SIZE: usize = 65;
+/// Per-key direct frame: report ID + 642 bytes (`APEX_PACKET_LENGTH`).
+pub const APEX_DIRECT_REPORT_SIZE: usize = 643;
+/// Apex 9 TKL / Apex 9 Mini direct frame (`APEX_9_PACKET_LENGTH`).
+pub const APEX_9_DIRECT_REPORT_SIZE: usize = 513;
+/// Apex 3 tri-zone (`STEELSERIES_TZ_WRITE_PACKET_SIZE`) and old Apex output reports: report ID + 32 bytes.
+pub const APEX_SHORT_REPORT_SIZE: usize = 33;
+/// Apex M750 feature report (`SS_APEX_M_PACKET_SIZE`).
+pub const APEX_M_REPORT_SIZE: usize = 513;
+/// Apex Pro TKL 2023 live actuation frame: report ID + 644 bytes (apex-web `bloc0x38`).
+pub const APEX_2023_ACTUATION_REPORT_SIZE: usize = 645;
+/// Apex Pro TKL (Gen 1) live actuation frame: report ID + 642 bytes (apex-control `BuildFrame`).
+pub const APEX_GEN1_ACTUATION_REPORT_SIZE: usize = 643;
+/// Highest illumination level of the per-key family (`APEX_BRIGHTNESS_MAX`).
+pub const APEX_ILLUMINATION_MAX: u8 = 10;
+/// Highest brightness of the 8-zone family (`STEELSERIES_8Z_BRIGHTNESS_MAX`).
+pub const EIGHT_ZONE_BRIGHTNESS_MAX: u8 = 0x10;
+/// Highest brightness of the tri-zone family (`STEELSERIES_TZ_BRIGHTNESS_MAX`).
+pub const TRI_ZONE_BRIGHTNESS_MAX: u8 = 0x64;
+/// Zones driven by the 8-zone family (`STEELSERIES_8Z_LED_COUNT`).
+pub const EIGHT_ZONE_COUNT: usize = 8;
+/// Zones driven by the tri-zone family (`STEELSERIES_TZ_LED_COUNT`).
+pub const TRI_ZONE_COUNT: usize = 10;
+/// Zones of the old Apex, in wire order: QWERTY, ten-key, function keys, MX keys, logo.
+pub const OLD_APEX_ZONE_COUNT: usize = 5;
+/// Lowest old Apex zone brightness (apexctl: 1 turns the zone off).
+pub const OLD_APEX_BRIGHTNESS_MIN: u8 = 1;
+/// Highest old Apex zone brightness (apexctl; OpenRGB always sends this value).
+pub const OLD_APEX_BRIGHTNESS_MAX: u8 = 8;
+/// Slots in an Apex M750 direct frame: 6 rows of 22 columns.
+pub const APEX_M_SLOT_COUNT: usize = 132;
+
+fn prepare_buffer(buffer: &mut [u8], size: usize) -> Result<()> {
+    if buffer.len() < size {
+        return Err(Error::DeviceCommunication(format!(
+            "Buffer too small: {} bytes (expected {})",
+            buffer.len(),
+            size
+        )));
+    }
+    buffer[..size].fill(0);
+    Ok(())
+}
+
+/// Packet ID of the per-key direct frame, chosen by protocol generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ApexDirectPacket {
+    /// Gen 1 (2019-22 case design): `0x3A`.
+    Gen1,
+    /// Gen 2 / Gen 3, wired: `0x40`.
+    Wired2023,
+    /// Gen 2 / Gen 3 wireless models, on the dongle or on cable: `0x61`.
+    Wireless2023,
+}
+
+impl ApexDirectPacket {
+    /// Command code carried by this packet.
+    pub const fn command_code(self) -> CommandCode {
+        match self {
+            Self::Gen1 => CommandCode::ApexLegacyDirect,
+            Self::Wired2023 => CommandCode::Apex2023Direct,
+            Self::Wireless2023 => CommandCode::Apex2023DirectWireless,
+        }
+    }
+
+    /// Byte written after the report ID.
+    pub const fn byte(self) -> u8 {
+        self.command_code() as u8
+    }
+}
+
+/// [EXPERIMENTAL] Per-key direct frame of the Apex 5/7/9/Pro family.
+///
+/// Feature report `[0x00][packet][count][hid R G B] x count`, zero-padded to `report_len`.
+/// Reference: OpenRGB `SteelSeriesApexController::SetLEDsDirect`. The Gen 1 layout also matches
+/// apex7tkl_linux `Device.send_colors` (`0x3A`, 642-byte payload).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApexDirectCommand {
+    /// Packet ID.
+    pub packet: ApexDirectPacket,
+    /// Total report length including the report ID (643, or 513 on the Apex 9 series).
+    pub report_len: usize,
+    /// `(HID usage, colour)` pairs in wire order.
+    pub entries: Vec<(u8, Color)>,
+}
+
+impl ApexDirectCommand {
+    /// Create an empty frame.
+    pub fn new(packet: ApexDirectPacket, report_len: usize) -> Self {
+        Self {
+            packet,
+            report_len,
+            entries: Vec::new(),
+        }
+    }
+
+    /// Append one key.
+    pub fn push(&mut self, hid_code: u8, color: Color) {
+        self.entries.push((hid_code, color));
+    }
+
+    /// Most entries that fit: `count * 4 + 3 <= report_len`, and `count` is one byte.
+    pub fn capacity(&self) -> usize {
+        (self.report_len.saturating_sub(3) / 4).min(u8::MAX as usize)
+    }
+}
+
+impl HidCommand for ApexDirectCommand {
+    fn command_code(&self) -> CommandCode {
+        self.packet.command_code()
+    }
+
+    fn serialize(&self, buffer: &mut [u8], _device_type: HidDeviceType) -> Result<usize> {
+        self.validate()?;
+        prepare_buffer(buffer, self.report_len)?;
+        buffer[1] = self.packet.byte();
+        buffer[2] = self.entries.len() as u8;
+        for (i, (hid_code, color)) in self.entries.iter().enumerate() {
+            let offset = 3 + i * 4;
+            buffer[offset] = *hid_code;
+            buffer[offset + 1] = color.r;
+            buffer[offset + 2] = color.g;
+            buffer[offset + 3] = color.b;
+        }
+        Ok(self.report_len)
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.report_len < 7 {
+            return Err(Error::DeviceCommunication(format!(
+                "Apex direct frame length {} is too short",
+                self.report_len
+            )));
+        }
+        if self.entries.is_empty() {
+            return Err(Error::DeviceCommunication(
+                "Apex direct frame must contain at least one key".to_string(),
+            ));
+        }
+        if self.entries.len() > self.capacity() {
+            return Err(Error::DeviceCommunication(format!(
+                "Apex direct frame holds at most {} keys in {} bytes, got {}",
+                self.capacity(),
+                self.report_len,
+                self.entries.len()
+            )));
+        }
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!(
+            "Apex direct frame {:#04x} for {} keys",
+            self.packet.byte(),
+            self.entries.len()
+        )
+    }
+}
+
+/// [EXPERIMENTAL] Gen 3 initialisation feature report: `[0x00][0x4B]`, zero-padded.
+///
+/// OpenRGB sends it as a 65-byte report (`SteelSeriesApexController::SendInitialization`). This
+/// crate's Apex Pro TKL 2023 Wireless / Gen 3 path sends the same two bytes in a 643-byte report.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApexInitCommand {
+    /// Total report length including the report ID.
+    pub report_len: usize,
+}
+
+impl ApexInitCommand {
+    /// Create an init report of `report_len` bytes.
+    pub fn new(report_len: usize) -> Self {
+        Self { report_len }
+    }
+}
+
+impl HidCommand for ApexInitCommand {
+    fn command_code(&self) -> CommandCode {
+        CommandCode::Apex2023Init
+    }
+
+    fn serialize(&self, buffer: &mut [u8], _device_type: HidDeviceType) -> Result<usize> {
+        self.validate()?;
+        prepare_buffer(buffer, self.report_len)?;
+        buffer[1] = CommandCode::Apex2023Init as u8;
+        Ok(self.report_len)
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.report_len < 2 {
+            return Err(Error::DeviceCommunication(
+                "Apex init report needs at least 2 bytes".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Apex Gen 3 init ({} bytes)", self.report_len)
+    }
+}
+
+/// [EXPERIMENTAL] Illumination brightness: output report `[0x00][0x23][level]`.
+///
+/// Per-key family: `0..=10` (OpenRGB `SteelSeriesApexController::SetBrightness`). 8-zone family:
+/// `0..=0x10` (OpenRGB `SteelSeriesApex8ZoneController::SetBrightness`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IlluminationBrightnessCommand {
+    /// Level to write.
+    pub level: u8,
+    /// Highest level the family accepts.
+    pub max: u8,
+}
+
+impl IlluminationBrightnessCommand {
+    /// Byte written after the report ID.
+    pub const WIRE_BYTE: u8 = 0x23;
+
+    /// Create a brightness command for a family whose highest level is `max`.
+    pub fn new(level: u8, max: u8) -> Self {
+        Self { level, max }
+    }
+}
+
+impl HidCommand for IlluminationBrightnessCommand {
+    fn command_code(&self) -> CommandCode {
+        CommandCode::Brightness
+    }
+
+    fn serialize(&self, buffer: &mut [u8], _device_type: HidDeviceType) -> Result<usize> {
+        self.validate()?;
+        prepare_buffer(buffer, APEX_OUTPUT_REPORT_SIZE)?;
+        buffer[1] = Self::WIRE_BYTE;
+        buffer[2] = self.level;
+        Ok(APEX_OUTPUT_REPORT_SIZE)
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.level > self.max {
+            return Err(Error::DeviceCommunication(format!(
+                "Brightness level {} is above the maximum {}",
+                self.level, self.max
+            )));
+        }
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Set illumination brightness to {}/{}", self.level, self.max)
+    }
+}
+
+/// [EXPERIMENTAL] Read-back requests of the per-key family: output report `[0x00][code]`.
+///
+/// Reference: OpenRGB `SteelSeriesApexController::ReadBrightness` (`0xA3`) and
+/// `SteelSeriesApexBaseController::GetVersion` (`0x90`). The answer arrives as a 64-byte input report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ApexQuery {
+    /// Illumination brightness (`0xA3`); see [`parse_illumination_reply`].
+    Brightness,
+    /// Keyboard firmware version (`0x90`); see [`parse_apex_firmware_version`].
+    FirmwareVersion,
+}
+
+impl HidCommand for ApexQuery {
+    fn command_code(&self) -> CommandCode {
+        match self {
+            Self::Brightness => CommandCode::BrightnessQuery,
+            Self::FirmwareVersion => CommandCode::FirmwareQuery,
+        }
+    }
+
+    fn serialize(&self, buffer: &mut [u8], _device_type: HidDeviceType) -> Result<usize> {
+        prepare_buffer(buffer, APEX_OUTPUT_REPORT_SIZE)?;
+        buffer[1] = self.command_code() as u8;
+        Ok(APEX_OUTPUT_REPORT_SIZE)
+    }
+
+    fn validate(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Apex query {}", self.command_code())
+    }
+}
+
+/// Parse the answer to [`ApexQuery::Brightness`] from a per-key keyboard.
+///
+/// Reference: OpenRGB `SteelSeriesApexController::ReadBrightness`. The answer is
+/// `[0xA3][status][level]`. A status other than `0x00` (unsupported models answer `0xFF`), a
+/// level above 10 or a short answer means the keyboard does not offer brightness.
+pub fn parse_illumination_reply(reply: &[u8]) -> Option<u8> {
+    match reply {
+        [0xA3, 0x00, level, ..] if *level <= APEX_ILLUMINATION_MAX => Some(*level),
+        _ => None,
+    }
+}
+
+/// Parse `major.minor.patch` from the answer to [`ApexQuery::FirmwareVersion`].
+///
+/// Reference: OpenRGB `GetVersion`, `ExtractVersion` and `SendInitialization`: NUL bytes are
+/// dropped, a leading `0x90` echo is skipped, and the text must read `major.minor.patch`.
+pub fn parse_apex_firmware_version(reply: &[u8]) -> Option<(u32, u32, u32)> {
+    let mut text: Vec<u8> = reply.iter().copied().filter(|&b| b != 0).collect();
+    if reply.first() == Some(&(CommandCode::FirmwareQuery as u8)) && !text.is_empty() {
+        text.remove(0);
+    }
+    let text = String::from_utf8_lossy(&text);
+    let mut parts = text.splitn(3, '.');
+    let whole = |part: &str| -> Option<u32> {
+        let part = part.trim_start();
+        if part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        part.parse().ok()
+    };
+    let major = whole(parts.next()?)?;
+    let minor = whole(parts.next()?)?;
+    let patch_text = parts.next()?.trim_start();
+    let digits: String = patch_text.chars().take_while(char::is_ascii_digit).collect();
+    let patch = digits.parse().ok()?;
+    Some((major, minor, patch))
+}
+
+/// Whether a firmware version selects the Gen 3 protocol (OpenRGB: 1.19.7 or newer).
+pub fn firmware_selects_gen3(version: (u32, u32, u32)) -> bool {
+    version >= (1, 19, 7)
+}
+
+/// [EXPERIMENTAL] Apex 3 tri-zone colours: output report `[0x00][0x0B][0x00][R G B] x 10`, 33 bytes.
+///
+/// Reference: OpenRGB `SteelSeriesApexTZoneController::SetColor`. Missing zones are sent black.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TriZoneColorCommand {
+    /// Zone colours, at most [`TRI_ZONE_COUNT`].
+    pub colors: Vec<Color>,
+}
+
+impl HidCommand for TriZoneColorCommand {
+    fn command_code(&self) -> CommandCode {
+        CommandCode::TriZoneColor
+    }
+
+    fn serialize(&self, buffer: &mut [u8], _device_type: HidDeviceType) -> Result<usize> {
+        self.validate()?;
+        prepare_buffer(buffer, APEX_SHORT_REPORT_SIZE)?;
+        buffer[1] = CommandCode::TriZoneColor as u8;
+        for (i, color) in self.colors.iter().enumerate() {
+            let offset = 3 + i * 3;
+            buffer[offset] = color.r;
+            buffer[offset + 1] = color.g;
+            buffer[offset + 2] = color.b;
+        }
+        Ok(APEX_SHORT_REPORT_SIZE)
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.colors.len() > TRI_ZONE_COUNT {
+            return Err(Error::DeviceCommunication(format!(
+                "Tri-zone report holds {} zones, got {}",
+                TRI_ZONE_COUNT,
+                self.colors.len()
+            )));
+        }
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Set {} tri-zone colours", self.colors.len())
+    }
+}
+
+/// [EXPERIMENTAL] Apex 3 tri-zone brightness: output report `[0x00][0x0A][0x00][level]`, 33 bytes.
+///
+/// Reference: OpenRGB `SteelSeriesApexTZoneController::SetColor`, which sends it before every
+/// colour report. Level `0..=100`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TriZoneBrightnessCommand {
+    /// Level `0..=100`.
+    pub level: u8,
+}
+
+impl HidCommand for TriZoneBrightnessCommand {
+    fn command_code(&self) -> CommandCode {
+        CommandCode::TriZoneBrightness
+    }
+
+    fn serialize(&self, buffer: &mut [u8], _device_type: HidDeviceType) -> Result<usize> {
+        self.validate()?;
+        prepare_buffer(buffer, APEX_SHORT_REPORT_SIZE)?;
+        buffer[1] = CommandCode::TriZoneBrightness as u8;
+        buffer[3] = self.level;
+        Ok(APEX_SHORT_REPORT_SIZE)
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.level > TRI_ZONE_BRIGHTNESS_MAX {
+            return Err(Error::DeviceCommunication(format!(
+                "Tri-zone brightness {} is above {}",
+                self.level, TRI_ZONE_BRIGHTNESS_MAX
+            )));
+        }
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Set tri-zone brightness to {}", self.level)
+    }
+}
+
+/// The two reports of the Apex 3 tri-zone save sequence, sent in this order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TriZoneSaveStep {
+    /// `[0x00][0x06][0x00][0x08]`.
+    Prepare,
+    /// `[0x00][0x09][0x00][0x00]`.
+    Commit,
+}
+
+/// [EXPERIMENTAL] One report of the Apex 3 tri-zone save sequence (33 bytes).
+///
+/// Reference: OpenRGB `SteelSeriesApexTZoneController::Save`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TriZoneSaveCommand {
+    /// Which report of the sequence.
+    pub step: TriZoneSaveStep,
+}
+
+impl HidCommand for TriZoneSaveCommand {
+    fn command_code(&self) -> CommandCode {
+        match self.step {
+            TriZoneSaveStep::Prepare => CommandCode::TriZoneSave,
+            TriZoneSaveStep::Commit => CommandCode::Apply,
+        }
+    }
+
+    fn serialize(&self, buffer: &mut [u8], _device_type: HidDeviceType) -> Result<usize> {
+        prepare_buffer(buffer, APEX_SHORT_REPORT_SIZE)?;
+        buffer[1] = self.command_code() as u8;
+        if self.step == TriZoneSaveStep::Prepare {
+            buffer[3] = 0x08;
+        }
+        Ok(APEX_SHORT_REPORT_SIZE)
+    }
+
+    fn validate(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Tri-zone save ({:?})", self.step)
+    }
+}
+
+/// [EXPERIMENTAL] Old Apex / Apex 350 zone colours: output report
+/// `[0x00][0x07][0x00][R G B brightness] x 5`, 33 bytes.
+///
+/// Zone order: QWERTY, ten-key, function keys, MX keys, logo (OpenRGB
+/// `SteelSeriesOldApexController::SetColorDetailed`). OpenRGB always sends brightness `0x08`;
+/// apexctl `cmd_colors` documents 1 (off) to 8 (brightest). Missing zones are sent black.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OldApexColorCommand {
+    /// Zone colours, at most [`OLD_APEX_ZONE_COUNT`].
+    pub zones: Vec<Color>,
+    /// Brightness written in every zone, `1..=8`.
+    pub brightness: u8,
+}
+
+impl HidCommand for OldApexColorCommand {
+    fn command_code(&self) -> CommandCode {
+        CommandCode::OldApexColor
+    }
+
+    fn serialize(&self, buffer: &mut [u8], _device_type: HidDeviceType) -> Result<usize> {
+        self.validate()?;
+        prepare_buffer(buffer, APEX_SHORT_REPORT_SIZE)?;
+        buffer[1] = CommandCode::OldApexColor as u8;
+        for zone in 0..OLD_APEX_ZONE_COUNT {
+            let color = self.zones.get(zone).copied().unwrap_or(Color::BLACK);
+            let offset = 3 + zone * 4;
+            buffer[offset] = color.r;
+            buffer[offset + 1] = color.g;
+            buffer[offset + 2] = color.b;
+            buffer[offset + 3] = self.brightness;
+        }
+        Ok(APEX_SHORT_REPORT_SIZE)
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.zones.len() > OLD_APEX_ZONE_COUNT {
+            return Err(Error::DeviceCommunication(format!(
+                "Old Apex report holds {} zones, got {}",
+                OLD_APEX_ZONE_COUNT,
+                self.zones.len()
+            )));
+        }
+        if !(OLD_APEX_BRIGHTNESS_MIN..=OLD_APEX_BRIGHTNESS_MAX).contains(&self.brightness) {
+            return Err(Error::DeviceCommunication(format!(
+                "Old Apex brightness must be {OLD_APEX_BRIGHTNESS_MIN}..={OLD_APEX_BRIGHTNESS_MAX}, got {}",
+                self.brightness
+            )));
+        }
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Set old Apex zones (brightness {})", self.brightness)
+    }
+}
+
+/// Polling rates of the old Apex (apexctl `POLL_125` .. `POLL_1000`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OldApexPollingRate {
+    Hz125,
+    Hz250,
+    Hz500,
+    Hz1000,
+}
+
+impl OldApexPollingRate {
+    /// All rates, slowest first.
+    pub const ALL: [Self; 4] = [Self::Hz125, Self::Hz250, Self::Hz500, Self::Hz1000];
+
+    /// Rate in Hz.
+    pub const fn hz(self) -> u16 {
+        match self {
+            Self::Hz125 => 125,
+            Self::Hz250 => 250,
+            Self::Hz500 => 500,
+            Self::Hz1000 => 1000,
+        }
+    }
+
+    /// Value sent on the wire.
+    pub const fn index(self) -> u8 {
+        match self {
+            Self::Hz125 => 0,
+            Self::Hz250 => 1,
+            Self::Hz500 => 2,
+            Self::Hz1000 => 3,
+        }
+    }
+
+    /// Look a rate up by Hz.
+    pub fn from_hz(hz: u16) -> Option<Self> {
+        Self::ALL.into_iter().find(|rate| rate.hz() == hz)
+    }
+}
+
+/// [EXPERIMENTAL] Old Apex polling rate: 3-byte feature report `[0x04][0x00][rate]`.
+///
+/// Reference: apexctl `cmd_poll`, sent with `hid_send_feature_report`, so `0x04` is the report ID.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OldApexPollingRateCommand {
+    /// Rate to select.
+    pub rate: OldApexPollingRate,
+}
+
+impl OldApexPollingRateCommand {
+    /// Report length.
+    pub const REPORT_SIZE: usize = 3;
+}
+
+impl HidCommand for OldApexPollingRateCommand {
+    fn command_code(&self) -> CommandCode {
+        CommandCode::OldApexPollingRate
+    }
+
+    fn serialize(&self, buffer: &mut [u8], _device_type: HidDeviceType) -> Result<usize> {
+        prepare_buffer(buffer, Self::REPORT_SIZE)?;
+        buffer[0] = CommandCode::OldApexPollingRate as u8;
+        buffer[2] = self.rate.index();
+        Ok(Self::REPORT_SIZE)
+    }
+
+    fn validate(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Set old Apex polling rate to {} Hz", self.rate.hz())
+    }
+
+    fn has_standard_header(&self) -> bool {
+        false
+    }
+}
+
+/// The three reports of the Apex M750 LED-control enable sequence, sent in this order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ApexMEnableStep {
+    First,
+    Second,
+    Third,
+}
+
+impl ApexMEnableStep {
+    /// The sequence in order.
+    pub const ALL: [Self; 3] = [Self::First, Self::Second, Self::Third];
+}
+
+/// [EXPERIMENTAL] One report of the Apex M750 LED-control enable sequence (513-byte feature report).
+///
+/// Reference: OpenRGB `SteelSeriesApexMController::EnableLEDControl`. OpenRGB reuses one buffer
+/// without clearing it, so the third report still carries the `0xFF` written at byte 7 by the second.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApexMEnableCommand {
+    /// Which report of the sequence.
+    pub step: ApexMEnableStep,
+}
+
+impl HidCommand for ApexMEnableCommand {
+    fn command_code(&self) -> CommandCode {
+        CommandCode::ApexMEnable
+    }
+
+    fn serialize(&self, buffer: &mut [u8], _device_type: HidDeviceType) -> Result<usize> {
+        prepare_buffer(buffer, APEX_M_REPORT_SIZE)?;
+        match self.step {
+            ApexMEnableStep::First => {
+                buffer[4] = 0x01;
+                buffer[6] = 0x85;
+            }
+            ApexMEnableStep::Second => {
+                buffer[4] = 0x03;
+                buffer[5] = 0x01;
+                buffer[7] = 0xFF;
+            }
+            ApexMEnableStep::Third => {
+                buffer[4] = 0x01;
+                buffer[6] = 0x85;
+                buffer[7] = 0xFF;
+            }
+        }
+        Ok(APEX_M_REPORT_SIZE)
+    }
+
+    fn validate(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Apex M750 enable ({:?})", self.step)
+    }
+
+    fn has_standard_header(&self) -> bool {
+        false
+    }
+}
+
+/// [EXPERIMENTAL] Apex M750 direct frame (513-byte feature report).
+///
+/// Header `00 00 00 01 8E 01 03 06 16`, then 132 slots of `R G B` from byte 9. Slots without a
+/// key are sent as `FF 32 00`. Reference: OpenRGB `SteelSeriesApexMController::SetLEDsDirect`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApexMDirectCommand {
+    /// Exactly [`APEX_M_SLOT_COUNT`] slots; `None` marks a slot without a key.
+    pub slots: Vec<Option<Color>>,
+}
+
+impl ApexMDirectCommand {
+    const HEADER: [u8; 9] = [0x00, 0x00, 0x00, 0x01, 0x8E, 0x01, 0x03, 0x06, 0x16];
+    const EMPTY_SLOT: [u8; 3] = [0xFF, 0x32, 0x00];
+}
+
+impl HidCommand for ApexMDirectCommand {
+    fn command_code(&self) -> CommandCode {
+        CommandCode::ApexMDirect
+    }
+
+    fn serialize(&self, buffer: &mut [u8], _device_type: HidDeviceType) -> Result<usize> {
+        self.validate()?;
+        prepare_buffer(buffer, APEX_M_REPORT_SIZE)?;
+        buffer[..Self::HEADER.len()].copy_from_slice(&Self::HEADER);
+        for (i, slot) in self.slots.iter().enumerate() {
+            let offset = Self::HEADER.len() + i * 3;
+            let bytes = match slot {
+                Some(color) => [color.r, color.g, color.b],
+                None => Self::EMPTY_SLOT,
+            };
+            buffer[offset..offset + 3].copy_from_slice(&bytes);
+        }
+        Ok(APEX_M_REPORT_SIZE)
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.slots.len() != APEX_M_SLOT_COUNT {
+            return Err(Error::DeviceCommunication(format!(
+                "Apex M750 frame needs {} slots, got {}",
+                APEX_M_SLOT_COUNT,
+                self.slots.len()
+            )));
+        }
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        "Apex M750 direct frame".to_string()
+    }
+
+    fn has_standard_header(&self) -> bool {
+        false
+    }
+}
+
+/// HID usages addressed by both live actuation frames, in wire order: `0x04..=0x28`,
+/// `0x2A..=0x39`, `0x64`, `0x87..=0x8B`, `0xE0..=0xE7`, `0xF0`.
+///
+/// Identical in apex-web (`KEY_ORDER`, `capture-data.js`) and apex-control (`BuildKeyCodes`,
+/// `Actuation.cs`). Escape, the F-row, the arrows and the navigation block are not addressed.
+pub const APEX_PRO_ACTUATION_KEYS: [u8; 68] = [
+    0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
+    0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2A,
+    0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x64, 0x87, 0x88, 0x89,
+    0x8A, 0x8B, 0xE0, 0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xF0,
+];
+
+/// Actuation range shared by the live actuation settings, in 0.1 mm.
+pub const ACTUATION_TENTHS_RANGE: std::ops::RangeInclusive<u8> = 1..=40;
+
+/// apex-web raw byte for a depth in mm: `round(3.5696 + 11.2840x + 4.6982x^2 + 1.5643x^3)`,
+/// clamped to `5..=224` (`mmVersOctet`, `index.html`).
+fn apex_2023_raw_for_mm(mm: f64) -> u8 {
+    let raw = 3.5696 + 11.2840 * mm + 4.6982 * mm * mm + 1.5643 * mm * mm * mm;
+    raw.round().clamp(5.0, 224.0) as u8
+}
+
+/// apex-web actuation byte for a depth in 0.1 mm.
+pub fn apex_2023_actuation_raw(tenths: u8) -> u8 {
+    apex_2023_raw_for_mm(f64::from(tenths) / 10.0)
+}
+
+/// apex-web release byte: the actuation curve 0.1 mm shallower, never above 0.1 mm
+/// (`relachement`, `index.html`).
+pub fn apex_2023_release_raw(tenths: u8) -> u8 {
+    apex_2023_raw_for_mm(f64::from(tenths.saturating_sub(1).max(1)) / 10.0)
+}
+
+/// [EXPERIMENTAL] Apex Pro TKL 2023 (`0x1628`) live actuation frame, 645-byte feature report:
+/// `[0x00][0x38][0x61][count LE16][hid actuation release] x count`.
+///
+/// Reference: apex-web `bloc0x38` / `PROTOCOL.md`, tested by its author on `0x1628` firmware
+/// 1.19.7. The setting is lost on unplug. apex-web notes that wrapping the frame in other
+/// commands cancels it, so it is sent alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActuationLive2023Command {
+    /// `(HID usage, actuation byte, release byte)` triplets in wire order.
+    pub entries: Vec<(u8, u8, u8)>,
+}
+
+impl ActuationLive2023Command {
+    /// One depth for every addressed key, in 0.1 mm (`1..=40`).
+    pub fn global(tenths: u8) -> Result<Self> {
+        if !ACTUATION_TENTHS_RANGE.contains(&tenths) {
+            return Err(Error::InvalidConfig(format!(
+                "actuation must be 1..=40 (0.1 mm steps), got {tenths}"
+            )));
+        }
+        let actuation = apex_2023_actuation_raw(tenths);
+        let release = apex_2023_release_raw(tenths);
+        Ok(Self {
+            entries: APEX_PRO_ACTUATION_KEYS
+                .iter()
+                .map(|&hid| (hid, actuation, release))
+                .collect(),
+        })
+    }
+}
+
+impl HidCommand for ActuationLive2023Command {
+    fn command_code(&self) -> CommandCode {
+        CommandCode::ActuationLive2023
+    }
+
+    fn serialize(&self, buffer: &mut [u8], _device_type: HidDeviceType) -> Result<usize> {
+        self.validate()?;
+        prepare_buffer(buffer, APEX_2023_ACTUATION_REPORT_SIZE)?;
+        let count = self.entries.len() as u16;
+        buffer[1] = CommandCode::ActuationLive2023 as u8;
+        buffer[2] = 0x61;
+        buffer[3..5].copy_from_slice(&count.to_le_bytes());
+        for (i, (hid, actuation, release)) in self.entries.iter().enumerate() {
+            let offset = 5 + i * 3;
+            buffer[offset] = *hid;
+            buffer[offset + 1] = *actuation;
+            buffer[offset + 2] = *release;
+        }
+        Ok(APEX_2023_ACTUATION_REPORT_SIZE)
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.entries.is_empty() || 5 + self.entries.len() * 3 > APEX_2023_ACTUATION_REPORT_SIZE {
+            return Err(Error::DeviceCommunication(format!(
+                "Live actuation frame cannot hold {} keys",
+                self.entries.len()
+            )));
+        }
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Apex 2023 live actuation for {} keys", self.entries.len())
+    }
+}
+
+/// apex-control raw actuation values `(0.1 mm, raw u16)` captured from SteelSeries GG on the
+/// Apex Pro TKL (`0x1614`, firmware 4.16.8). 3.2 mm is missing on purpose (it caused key-repeat
+/// spam on that board); 3.7-3.9 mm were never captured. Source: `KnownGoodValues`, `Actuation.cs`.
+pub const APEX_GEN1_ACTUATION_TABLE: [(u8, u16); 36] = [
+    (1, 1542),
+    (2, 1286),
+    (3, 1544),
+    (4, 2058),
+    (5, 2571),
+    (6, 2829),
+    (7, 3343),
+    (8, 3858),
+    (9, 4628),
+    (10, 5143),
+    (11, 5913),
+    (12, 6428),
+    (13, 7199),
+    (14, 7971),
+    (15, 8998),
+    (16, 9770),
+    (17, 10798),
+    (18, 11826),
+    (19, 12855),
+    (20, 14139),
+    (21, 15168),
+    (22, 16454),
+    (23, 18124),
+    (24, 19538),
+    (25, 21081),
+    (26, 22880),
+    (27, 24680),
+    (28, 26737),
+    (29, 29051),
+    (30, 31621),
+    (31, 34192),
+    (33, 40106),
+    (34, 43704),
+    (35, 47296),
+    (36, 49352),
+    (40, 54489),
+];
+
+/// Keys apex-control always sends with [`APEX_GEN1_ACTUATION_SENTINEL`]: the ISO / international
+/// keys its ANSI board does not have (`SentinelKeys`, `Actuation.cs`).
+pub const APEX_GEN1_ACTUATION_SENTINEL_KEYS: [u8; 7] = [0x32, 0x64, 0x87, 0x88, 0x89, 0x8A, 0x8B];
+
+/// Fixed value for [`APEX_GEN1_ACTUATION_SENTINEL_KEYS`] (`SentinelRaw`, wire bytes `23 1F`).
+pub const APEX_GEN1_ACTUATION_SENTINEL: u16 = 0x1F23;
+
+/// Raw value for a depth in 0.1 mm, if apex-control captured one.
+pub fn apex_gen1_actuation_raw(tenths: u8) -> Option<u16> {
+    APEX_GEN1_ACTUATION_TABLE
+        .iter()
+        .find(|(t, _)| *t == tenths)
+        .map(|(_, raw)| *raw)
+}
+
+/// [EXPERIMENTAL] Apex Pro TKL (`0x1614`) live actuation frame, 643-byte feature report:
+/// `[0x00][0x31][0x47][hid raw_lo raw_hi] x 68`.
+///
+/// Reference: apex-control `BuildFrame` (`Actuation.cs`), tested by its author on the wired
+/// Apex Pro TKL (model 64734), firmware 4.16.8.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActuationLiveGen1Command {
+    /// `(HID usage, raw value)` pairs in wire order.
+    pub entries: Vec<(u8, u16)>,
+}
+
+impl ActuationLiveGen1Command {
+    /// One captured depth for every addressed key, in 0.1 mm.
+    pub fn global(tenths: u8) -> Result<Self> {
+        let raw = apex_gen1_actuation_raw(tenths).ok_or_else(|| {
+            Error::InvalidConfig(format!(
+                "actuation {tenths} (0.1 mm) has no captured value; use 1-31, 33-36 or 40"
+            ))
+        })?;
+        Ok(Self {
+            entries: APEX_PRO_ACTUATION_KEYS
+                .iter()
+                .map(|&hid| {
+                    let value = if APEX_GEN1_ACTUATION_SENTINEL_KEYS.contains(&hid) {
+                        APEX_GEN1_ACTUATION_SENTINEL
+                    } else {
+                        raw
+                    };
+                    (hid, value)
+                })
+                .collect(),
+        })
+    }
+}
+
+impl HidCommand for ActuationLiveGen1Command {
+    fn command_code(&self) -> CommandCode {
+        CommandCode::ActuationLiveGen1
+    }
+
+    fn serialize(&self, buffer: &mut [u8], _device_type: HidDeviceType) -> Result<usize> {
+        self.validate()?;
+        prepare_buffer(buffer, APEX_GEN1_ACTUATION_REPORT_SIZE)?;
+        buffer[1] = CommandCode::ActuationLiveGen1 as u8;
+        buffer[2] = 0x47;
+        for (i, (hid, raw)) in self.entries.iter().enumerate() {
+            let offset = 3 + i * 3;
+            buffer[offset] = *hid;
+            buffer[offset + 1..offset + 3].copy_from_slice(&raw.to_le_bytes());
+        }
+        Ok(APEX_GEN1_ACTUATION_REPORT_SIZE)
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.entries.is_empty() || 3 + self.entries.len() * 3 > APEX_GEN1_ACTUATION_REPORT_SIZE {
+            return Err(Error::DeviceCommunication(format!(
+                "Live actuation frame cannot hold {} keys",
+                self.entries.len()
+            )));
+        }
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Apex Gen 1 live actuation for {} keys", self.entries.len())
+    }
+}
+
+/// [EXPERIMENTAL] Apex Pro TKL (`0x1614`) live Rapid Tap (SOCD) switch: output report
+/// `[0x00][0x1A][0x00 | 0x01]`.
+///
+/// Reference: apex-control `PROTOCOL_NOTES.md`, tested on firmware 4.16.8. Which key pairs Rapid
+/// Tap applies to lives in the stored profile, which this crate does not write.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RapidTapCommand {
+    /// On or off.
+    pub enabled: bool,
+}
+
+impl HidCommand for RapidTapCommand {
+    fn command_code(&self) -> CommandCode {
+        CommandCode::RapidTap
+    }
+
+    fn serialize(&self, buffer: &mut [u8], _device_type: HidDeviceType) -> Result<usize> {
+        prepare_buffer(buffer, APEX_OUTPUT_REPORT_SIZE)?;
+        buffer[1] = CommandCode::RapidTap as u8;
+        buffer[2] = u8::from(self.enabled);
+        Ok(APEX_OUTPUT_REPORT_SIZE)
+    }
+
+    fn validate(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Rapid Tap {}", if self.enabled { "on" } else { "off" })
+    }
+}
+
 /// Structured HID report builder and validator.
 #[derive(Debug)]
 pub struct HidReportBuilder {
@@ -951,9 +2015,12 @@ impl HidReportBuilder {
             command.command_code()
         );
 
+        let has_standard_header = command.has_standard_header();
         let size = command.serialize(buffer, self.device_type)?;
         let data = &buffer[..size];
-        self.validate_report_size(data, size)?;
+        if has_standard_header {
+            self.validate_report_size(data, size)?;
+        }
 
         tracing::debug!(
             "Built {} byte HID report: {:02x?}",
@@ -1921,5 +2988,342 @@ mod tests {
             builder.parse_command_code(&actuation_data),
             Some(CommandCode::ActuationControl)
         );
+    }
+
+    // === OpenRGB-referenced Apex families ===
+    // Expected bytes follow the layouts in OpenRGB Controllers/SteelSeriesController/ (file named
+    // per test); offsets include the leading report ID byte.
+
+    fn build<C: HidCommand>(command: C, size: usize) -> Vec<u8> {
+        let builder = HidReportBuilder::new(HidDeviceType::Keyboard);
+        let mut buffer = vec![0u8; size];
+        let written = builder.build_report(command, &mut buffer).unwrap();
+        buffer.truncate(written);
+        buffer
+    }
+
+    /// SteelSeriesApexController.cpp `SetLEDsDirect`: `buf[1]` packet ID, `buf[2]` key count,
+    /// then `[hid R G B]` from `buf[3]`, `APEX_PACKET_LENGTH` = 643 bytes.
+    #[test]
+    fn apex_direct_frame_layout_per_generation() {
+        for (packet, byte) in [
+            (ApexDirectPacket::Gen1, 0x3A),
+            (ApexDirectPacket::Wired2023, 0x40),
+            (ApexDirectPacket::Wireless2023, 0x61),
+        ] {
+            let mut command = ApexDirectCommand::new(packet, APEX_DIRECT_REPORT_SIZE);
+            command.push(0x04, Color::new(1, 2, 3));
+            command.push(0xFB, Color::new(4, 5, 6));
+            let report = build(command, APEX_DIRECT_REPORT_SIZE);
+            assert_eq!(report.len(), 643);
+            assert_eq!(report[..11], [0x00, byte, 2, 0x04, 1, 2, 3, 0xFB, 4, 5, 6]);
+            assert!(report[11..].iter().all(|&b| b == 0));
+        }
+    }
+
+    /// SteelSeriesApexController.cpp `direct_packet_length_map`: Apex 9 frames are 513 bytes and
+    /// the key count is clamped so `count * 4 + 3` fits.
+    #[test]
+    fn apex_9_frame_is_513_bytes_and_bounded() {
+        let mut command = ApexDirectCommand::new(ApexDirectPacket::Wired2023, APEX_9_DIRECT_REPORT_SIZE);
+        assert_eq!(command.capacity(), 127);
+        for hid in 0..112u8 {
+            command.push(hid, Color::WHITE);
+        }
+        assert_eq!(build(command.clone(), APEX_9_DIRECT_REPORT_SIZE).len(), 513);
+        for hid in 0..16u8 {
+            command.push(hid, Color::WHITE);
+        }
+        assert!(command.validate().is_err(), "128 keys do not fit in 513 bytes");
+        assert!(ApexDirectCommand::new(ApexDirectPacket::Gen1, 643).validate().is_err());
+    }
+
+    /// SteelSeriesApexController.cpp `SendInitialization`: `[0x00][0x4B]` in a 65-byte feature report.
+    #[test]
+    fn apex_gen3_init_layout() {
+        let report = build(ApexInitCommand::new(APEX_OUTPUT_REPORT_SIZE), APEX_OUTPUT_REPORT_SIZE);
+        assert_eq!(report.len(), 65);
+        assert_eq!(report[..2], [0x00, 0x4B]);
+        assert!(report[2..].iter().all(|&b| b == 0));
+    }
+
+    /// SteelSeriesApexController.cpp `SetBrightness` (0..=10) and SteelSeriesApex8ZoneController.cpp
+    /// `SetBrightness` (0..=0x10): `[0x00][0x23][level]`, 65 bytes.
+    #[test]
+    fn illumination_brightness_layout_and_bounds() {
+        let report = build(IlluminationBrightnessCommand::new(7, APEX_ILLUMINATION_MAX), 65);
+        assert_eq!(report.len(), 65);
+        assert_eq!(report[..3], [0x00, 0x23, 7]);
+        assert!(report[3..].iter().all(|&b| b == 0));
+        let report = build(IlluminationBrightnessCommand::new(0x10, EIGHT_ZONE_BRIGHTNESS_MAX), 65);
+        assert_eq!(report[..3], [0x00, 0x23, 0x10]);
+        assert!(
+            IlluminationBrightnessCommand::new(11, APEX_ILLUMINATION_MAX)
+                .validate()
+                .is_err()
+        );
+        assert!(
+            IlluminationBrightnessCommand::new(0x11, EIGHT_ZONE_BRIGHTNESS_MAX)
+                .validate()
+                .is_err()
+        );
+    }
+
+    /// SteelSeriesApexController.cpp `ReadBrightness`: request `[0x00][0xA3]`, answer
+    /// `[0xA3][0x00][level]`; status `0xFF` or level > 10 means unsupported.
+    #[test]
+    fn brightness_query_and_reply() {
+        assert_eq!(build(ApexQuery::Brightness, 65)[..2], [0x00, 0xA3]);
+        assert_eq!(build(ApexQuery::FirmwareVersion, 65)[..2], [0x00, 0x90]);
+        assert_eq!(parse_illumination_reply(&[0xA3, 0x00, 7, 0, 0]), Some(7));
+        assert_eq!(parse_illumination_reply(&[0xA3, 0x00, 10]), Some(10));
+        assert_eq!(parse_illumination_reply(&[0xA3, 0xFF, 7]), None);
+        assert_eq!(parse_illumination_reply(&[0xA3, 0x00, 11]), None);
+        assert_eq!(parse_illumination_reply(&[0xA3, 0x00]), None);
+        assert_eq!(parse_illumination_reply(&[0x90, 0x00, 1]), None);
+    }
+
+    /// SteelSeriesApexBaseController.cpp `GetVersion` / `ExtractVersion` and
+    /// SteelSeriesApexController.cpp `SendInitialization` (Gen 3 from 1.19.7).
+    #[test]
+    fn firmware_version_selects_gen3_from_1_19_7() {
+        let mut reply = vec![0x90];
+        reply.extend_from_slice(b"1.19.7");
+        reply.resize(64, 0);
+        assert_eq!(parse_apex_firmware_version(&reply), Some((1, 19, 7)));
+        assert_eq!(parse_apex_firmware_version(b"2.0.11 build"), Some((2, 0, 11)));
+        assert_eq!(parse_apex_firmware_version(b"v1.19.7"), None);
+        assert_eq!(parse_apex_firmware_version(b"1.19"), None);
+        assert_eq!(parse_apex_firmware_version(&[]), None);
+
+        assert!(firmware_selects_gen3((1, 19, 7)));
+        assert!(firmware_selects_gen3((1, 20, 0)));
+        assert!(firmware_selects_gen3((2, 0, 0)));
+        assert!(!firmware_selects_gen3((1, 19, 6)));
+        assert!(!firmware_selects_gen3((1, 18, 99)));
+        assert!(!firmware_selects_gen3((0, 99, 99)));
+    }
+
+    /// SteelSeriesApex8ZoneController.cpp `SetColor`: `[0x00][0x21][0xFF][R G B] x 8`, 65 bytes,
+    /// which is what `RgbZoneCommand` builds for 8 colours.
+    #[test]
+    fn eight_zone_colour_layout() {
+        let colors: Vec<Color> = (0..EIGHT_ZONE_COUNT as u8)
+            .map(|i| Color::new(i, i + 10, i + 20))
+            .collect();
+        let report = build(RgbZoneCommand::new_all_zones(&colors), 65);
+        assert_eq!(report.len(), 65);
+        assert_eq!(report[..3], [0x00, 0x21, 0xFF]);
+        for (i, color) in colors.iter().enumerate() {
+            assert_eq!(report[3 + i * 3..6 + i * 3], [color.r, color.g, color.b]);
+        }
+        assert!(report[27..].iter().all(|&b| b == 0));
+    }
+
+    /// SteelSeriesApexTZoneController.cpp: `STEELSERIES_TZ_WRITE_PACKET_SIZE` = 33; brightness
+    /// `[0x00][0x0A][0x00][level]`, colours `[0x00][0x0B][0x00][R G B] x 10`, save
+    /// `[0x00][0x06][0x00][0x08]` then `[0x00][0x09][0x00][0x00]`.
+    #[test]
+    fn tri_zone_layouts() {
+        let report = build(TriZoneBrightnessCommand { level: 0x64 }, 33);
+        assert_eq!(report.len(), 33);
+        assert_eq!(report[..4], [0x00, 0x0A, 0x00, 0x64]);
+        assert!(report[4..].iter().all(|&b| b == 0));
+        assert!(TriZoneBrightnessCommand { level: 101 }.validate().is_err());
+
+        let colors: Vec<Color> = (0..TRI_ZONE_COUNT as u8).map(|i| Color::new(i, 2 * i, 3 * i)).collect();
+        let report = build(TriZoneColorCommand { colors: colors.clone() }, 33);
+        assert_eq!(report[..3], [0x00, 0x0B, 0x00]);
+        for (i, color) in colors.iter().enumerate() {
+            assert_eq!(report[3 + i * 3..6 + i * 3], [color.r, color.g, color.b]);
+        }
+        assert!(
+            TriZoneColorCommand {
+                colors: vec![Color::RED; 11]
+            }
+            .validate()
+            .is_err()
+        );
+
+        let prepare = build(
+            TriZoneSaveCommand {
+                step: TriZoneSaveStep::Prepare,
+            },
+            33,
+        );
+        let commit = build(
+            TriZoneSaveCommand {
+                step: TriZoneSaveStep::Commit,
+            },
+            33,
+        );
+        assert_eq!(prepare[..4], [0x00, 0x06, 0x00, 0x08]);
+        assert_eq!(commit[..4], [0x00, 0x09, 0x00, 0x00]);
+        assert!(prepare[4..].iter().chain(commit[4..].iter()).all(|&b| b == 0));
+    }
+
+    /// SteelSeriesOldApexController.cpp `SetColorDetailed`: `[0x00][0x07][0x00][R G B A] x 5`, 33 bytes.
+    #[test]
+    fn old_apex_colour_layout() {
+        let zones = vec![Color::RED, Color::GREEN, Color::BLUE];
+        let report = build(OldApexColorCommand { zones, brightness: 8 }, 33);
+        assert_eq!(report.len(), 33);
+        assert_eq!(
+            report[..23],
+            [
+                0x00, 0x07, 0x00, 255, 0, 0, 8, 0, 255, 0, 8, 0, 0, 255, 8, 0, 0, 0, 8, 0, 0, 0, 8
+            ]
+        );
+        assert!(report[23..].iter().all(|&b| b == 0));
+        assert!(
+            OldApexColorCommand {
+                zones: vec![],
+                brightness: 0
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            OldApexColorCommand {
+                zones: vec![Color::RED; 6],
+                brightness: 8
+            }
+            .validate()
+            .is_err()
+        );
+    }
+
+    /// apexctl `cmd_poll`: feature report `[0x04][0x00][0..=3]`.
+    #[test]
+    fn old_apex_polling_rate_layout() {
+        for (rate, index) in OldApexPollingRate::ALL.into_iter().zip(0u8..) {
+            let report = build(
+                OldApexPollingRateCommand { rate },
+                OldApexPollingRateCommand::REPORT_SIZE,
+            );
+            assert_eq!(report, [0x04, 0x00, index]);
+            assert_eq!(OldApexPollingRate::from_hz(rate.hz()), Some(rate));
+        }
+        assert_eq!(OldApexPollingRate::from_hz(300), None);
+    }
+
+    /// SteelSeriesApexMController.cpp `EnableLEDControl` and `SetLEDsDirect` (513 bytes).
+    #[test]
+    fn apex_m750_layouts() {
+        let enable: Vec<Vec<u8>> = ApexMEnableStep::ALL
+            .iter()
+            .map(|&step| build(ApexMEnableCommand { step }, APEX_M_REPORT_SIZE))
+            .collect();
+        assert_eq!(enable[0][..8], [0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x85, 0x00]);
+        assert_eq!(enable[1][..8], [0x00, 0x00, 0x00, 0x00, 0x03, 0x01, 0x00, 0xFF]);
+        // The buffer is not cleared between the reports, so 0xFF survives at byte 7.
+        assert_eq!(enable[2][..8], [0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x85, 0xFF]);
+        assert!(enable.iter().all(|r| r.len() == 513 && r[8..].iter().all(|&b| b == 0)));
+
+        let mut slots = vec![None; APEX_M_SLOT_COUNT];
+        slots[0] = Some(Color::new(9, 8, 7));
+        let report = build(ApexMDirectCommand { slots: slots.clone() }, APEX_M_REPORT_SIZE);
+        assert_eq!(report.len(), 513);
+        assert_eq!(report[..9], [0x00, 0x00, 0x00, 0x01, 0x8E, 0x01, 0x03, 0x06, 0x16]);
+        assert_eq!(report[9..15], [9, 8, 7, 0xFF, 0x32, 0x00]);
+        assert_eq!(report[9 + 131 * 3..9 + 132 * 3], [0xFF, 0x32, 0x00]);
+        assert!(report[9 + 132 * 3..].iter().all(|&b| b == 0));
+        slots.pop();
+        assert!(ApexMDirectCommand { slots }.validate().is_err());
+    }
+
+    /// apex-web `bloc0x38` (index.html) with `KEY_ORDER` (capture-data.js) and the
+    /// `mmVersOctet` / `relachement` curve.
+    #[test]
+    fn apex_2023_live_actuation_layout() {
+        assert_eq!(apex_2023_actuation_raw(1), 5);
+        assert_eq!(apex_2023_actuation_raw(10), 21);
+        assert_eq!(apex_2023_actuation_raw(20), 57);
+        assert_eq!(apex_2023_actuation_raw(22), 68);
+        assert_eq!(apex_2023_actuation_raw(40), 224);
+        assert_eq!(apex_2023_release_raw(1), 5);
+        assert_eq!(apex_2023_release_raw(20), 53);
+
+        let report = build(
+            ActuationLive2023Command::global(20).unwrap(),
+            APEX_2023_ACTUATION_REPORT_SIZE,
+        );
+        assert_eq!(report.len(), 645);
+        assert_eq!(report[..5], [0x00, 0x38, 0x61, 68, 0x00]);
+        for (i, &hid) in APEX_PRO_ACTUATION_KEYS.iter().enumerate() {
+            assert_eq!(report[5 + i * 3..8 + i * 3], [hid, 57, 53]);
+        }
+        assert!(report[5 + 68 * 3..].iter().all(|&b| b == 0));
+        assert!(ActuationLive2023Command::global(0).is_err());
+        assert!(ActuationLive2023Command::global(41).is_err());
+    }
+
+    /// apex-control `BuildFrame` / `BuildKeyCodes` / `KnownGoodValues` (Actuation.cs).
+    #[test]
+    fn apex_gen1_live_actuation_layout() {
+        assert_eq!(apex_gen1_actuation_raw(1), Some(0x0606));
+        assert_eq!(apex_gen1_actuation_raw(20), Some(0x373B));
+        assert_eq!(apex_gen1_actuation_raw(36), Some(0xC0C8));
+        assert_eq!(apex_gen1_actuation_raw(40), Some(0xD4D9));
+        assert_eq!(apex_gen1_actuation_raw(32), None, "3.2 mm is excluded");
+        assert_eq!(apex_gen1_actuation_raw(38), None);
+
+        let report = build(
+            ActuationLiveGen1Command::global(20).unwrap(),
+            APEX_GEN1_ACTUATION_REPORT_SIZE,
+        );
+        assert_eq!(report.len(), 643);
+        assert_eq!(report[..3], [0x00, 0x31, 0x47]);
+        for (i, &hid) in APEX_PRO_ACTUATION_KEYS.iter().enumerate() {
+            let expected = if APEX_GEN1_ACTUATION_SENTINEL_KEYS.contains(&hid) {
+                [hid, 0x23, 0x1F]
+            } else {
+                [hid, 0x3B, 0x37]
+            };
+            assert_eq!(report[3 + i * 3..6 + i * 3], expected);
+        }
+        assert!(report[3 + 68 * 3..].iter().all(|&b| b == 0));
+        assert!(ActuationLiveGen1Command::global(32).is_err());
+    }
+
+    #[test]
+    fn actuation_key_list_matches_both_tools() {
+        let expected: Vec<u8> = (0x04..=0x28)
+            .chain(0x2A..=0x39)
+            .chain([0x64])
+            .chain(0x87..=0x8B)
+            .chain(0xE0..=0xE7)
+            .chain([0xF0])
+            .collect();
+        assert_eq!(APEX_PRO_ACTUATION_KEYS.to_vec(), expected);
+        let table: Vec<u8> = APEX_GEN1_ACTUATION_TABLE.iter().map(|(t, _)| *t).collect();
+        assert!(table.windows(2).all(|w| w[0] < w[1]));
+        assert_eq!(table.len(), 36);
+    }
+
+    /// apex-control PROTOCOL_NOTES.md: Rapid Tap `1a 00` / `1a 01` as an output report.
+    #[test]
+    fn rapid_tap_layout() {
+        assert_eq!(build(RapidTapCommand { enabled: true }, 65)[..3], [0x00, 0x1A, 0x01]);
+        assert_eq!(build(RapidTapCommand { enabled: false }, 65)[..3], [0x00, 0x1A, 0x00]);
+    }
+
+    #[test]
+    fn new_command_bytes_parse_back() {
+        let builder = HidReportBuilder::new(HidDeviceType::Keyboard);
+        for (byte, code) in [
+            (0x3A, CommandCode::ApexLegacyDirect),
+            (0x61, CommandCode::Apex2023DirectWireless),
+            (0x4B, CommandCode::Apex2023Init),
+            (0xA3, CommandCode::BrightnessQuery),
+            (0x0B, CommandCode::TriZoneColor),
+            (0x07, CommandCode::OldApexColor),
+            (0x38, CommandCode::ActuationLive2023),
+            (0x31, CommandCode::ActuationLiveGen1),
+            (0x1A, CommandCode::RapidTap),
+        ] {
+            assert_eq!(builder.parse_command_code(&[0x00, byte]), Some(code));
+            assert_eq!(code as u8, byte);
+        }
     }
 }

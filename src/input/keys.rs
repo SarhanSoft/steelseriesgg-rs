@@ -247,6 +247,18 @@ impl InputKey {
             KeyId::NumEnter => "KEY_KPENTER",
             KeyId::Num0 => "KEY_KP0",
             KeyId::NumPeriod => "KEY_KPDOT",
+            KeyId::PrintScreen => "KEY_SYSRQ",
+            KeyId::ScrollLock => "KEY_SCROLLLOCK",
+            KeyId::Pause => "KEY_PAUSE",
+            // ISO "#" (HID 0x32) reports the same evdev code as "\" on ANSI boards.
+            KeyId::NonUsHash => "KEY_BACKSLASH",
+            KeyId::NonUsBackslash => "KEY_102ND",
+            KeyId::JpRo => "KEY_RO",
+            KeyId::JpKana => "KEY_KATAKANAHIRAGANA",
+            KeyId::JpYen => "KEY_YEN",
+            KeyId::JpHenkan => "KEY_HENKAN",
+            KeyId::JpMuhenkan => "KEY_MUHENKAN",
+            KeyId::MediaPlayPause => "KEY_PLAYPAUSE",
             KeyId::SteelSeriesKey | KeyId::VolumeWheel => return None,
         };
         KEY_NAMES

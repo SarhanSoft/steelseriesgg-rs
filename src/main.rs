@@ -796,8 +796,7 @@ async fn run(cli: Cli) -> Result<()> {
         }
 
         Commands::Actuation { action } => {
-            let manager = new_device_manager()?;
-            cmd_actuation(&manager, action).await?;
+            cmd_actuation(action).await?;
         }
 
         Commands::Profile { action } => {
@@ -967,52 +966,39 @@ async fn cmd_rgb(device: Option<String>, action: RgbAction) -> Result<()> {
     }
 }
 
-async fn cmd_actuation(manager: &DeviceManager, action: ActuationAction) -> Result<()> {
-    // Find the first keyboard
-    let keyboard_info = manager
-        .first_device_of_type(DeviceType::Keyboard)
-        .ok_or_else(|| Error::Other("No keyboard found".to_string()))?;
-
-    println!("Using keyboard: {}", keyboard_info.name);
-
-    // Open the keyboard using the abstraction layer
-    let mut keyboard = manager.open_keyboard(keyboard_info)?;
-
-    // Initialize the device
-    keyboard.initialize()?;
-
-    match action {
+async fn cmd_actuation(action: ActuationAction) -> Result<()> {
+    use steelseries_gg::engine::{Command, SettingsView};
+    let tenths = match action {
         ActuationAction::Set { mm } => {
-            println!("Setting actuation point to {:.1}mm", mm);
-
-            // Validate range
             if !(0.1..=4.0).contains(&mm) {
-                return Err(Error::Other(
+                return Err(Error::InvalidConfig(
                     "Actuation point must be between 0.1mm and 4.0mm".to_string(),
                 ));
             }
-
-            keyboard.set_actuation_point_mm(mm)?;
-            keyboard.apply().await?;
-            println!("Actuation point set successfully!");
+            (mm * 10.0).round() as u8
         }
-
         ActuationAction::SetValue { value } => {
-            println!("Setting actuation value to {}", value);
-
-            // Validate range
             if !(1..=40).contains(&value) {
                 return Err(Error::InvalidConfig(
                     "Actuation point value must be between 1 and 40".to_string(),
                 ));
             }
-
-            keyboard.set_actuation_point(value)?;
-            keyboard.apply().await?;
-            println!("Actuation value set successfully!");
+            value
         }
-    }
-
+    };
+    // Prefer the model's live actuation frame (taken from a tested reference) over the
+    // experimental 0x2D command.
+    let (view, _) = cli::call(Command::Settings {
+        device: "keyboard".to_string(),
+    })
+    .await?;
+    let view: SettingsView = serde_json::from_value(view)?;
+    let setting = ["actuation_live", "actuation"]
+        .into_iter()
+        .find(|id| view.settings.iter().any(|s| s.descriptor.id == *id))
+        .ok_or_else(|| Error::Unsupported(format!("{} has no adjustable actuation", view.name)))?;
+    cli::set(view.device, setting.to_string(), tenths.to_string()).await?;
+    println!("Actuation point: {:.1} mm", f32::from(tenths) / 10.0);
     Ok(())
 }
 

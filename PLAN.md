@@ -1,7 +1,7 @@
 ---
 goal: Execution-ready implementation plan for the open backlog (issues + TODO).
 date_created: 2026-03-17
-last_updated: 2026-08-18
+last_updated: 2026-10-01
 last_reviewed: 2026-06-15
 status: In Progress
 sources: GitHub issues #173 · TODO.md · OpenRGB SteelSeriesApex8ZoneController · prior PLAN.md
@@ -138,6 +138,31 @@ Given the code already matches the primary OpenRGB lead, **Phase 1's remaining b
 confirmation, not further code changes** — retest `ssgg rgb solid` on real Apex 3 TKL hardware first;
 only chase zone-count/brightness-byte changes if that retest still shows no LED response.
 
+### Implementation (2026-10-01) — Apex 3 TKL moved to OpenRGB's 8-zone family
+
+A closer read of the write path showed the "byte-for-byte" claim above was wrong:
+`GenericKeyboard::send_report` passes the built 65-byte report (report ID at byte 0) to
+`write_padded_report(..., 65, true)`, which adds another `0x00` in front. The keyboard therefore
+received `[0x00][0x21][0xFF]...`, the command one byte later than OpenRGB sends it. The Apex 3
+TKL now uses `KeyboardFamily::EightZone` (`src/devices/keyboards/protocol.rs`), all
+`[EXPERIMENTAL]` (Reference: OpenRGB `SteelSeriesApex8ZoneController`):
+
+- Colours: `[0x00][0x21][0xFF][R G B] x 8`, written as built (`write_output_exact`), 8 zones
+  (`zone_count_for_product_id`, `zone_mapping.rs`, `Apex3Tkl::ZONE_COUNT`).
+- Brightness: `[0x00][0x23][0..=0x10]`, written after the first colour update (full by default)
+  and whenever it changes, as OpenRGB does. `set_brightness(0..=100)` is scaled to 0-16; the
+  `brightness` setting takes 0-16.
+- `initialize()` and `apply()` send nothing; the old path sent `0x09`, which OpenRGB never sends
+  to this family.
+- Per-key and direct-address calls return `Error::Unsupported` instead of sending `0x23`
+  placeholder packets, which this family reads as brightness writes.
+- The legacy write path (extra `0x00`) is unchanged for the Apex Pro TKL (2023), where the
+  protocol notes record it as tested.
+
+The same change routes every other Apex PID by family (per-key direct frame, tri-zone, M750,
+old Apex); see `docs/development/protocol-keyboard.md` "Supported Devices". Hardware retest on
+an Apex 3 TKL: `ssgg rgb solid "#ff0000"`, then `ssgg rgb brightness 50`.
+
 ### Primary files
 
 - `src/devices/keyboards/apex.rs` — `Apex3Tkl` (`CMD_RGB_EFFECT`, color delegation lines 118–146)
@@ -155,11 +180,12 @@ only chase zone-count/brightness-byte changes if that retest still shows no LED 
    to `GenericKeyboard::set_color`/`set_zone_colors`, which already send `0x21` with bitmask `0xFF`
    and the `R G B`×N layout (`keyboards/mod.rs:521-540`). No separate override required unless
    hardware retest shows the delegated path is wrong for this SKU specifically.
-3. **Still open:** reconcile the zone count (code sends 9 via `zone_count_for_product_id`, OpenRGB
-   models 8) — see Research update above and Open Questions §10.1.
-4. Confirm whether a separate `0x23` brightness write is needed before/after color for the LEDs
-   to be visible at non-zero brightness.
-5. Mark anything still unverified with an explicit `experimental` doc comment.
+3. ~~Reconcile the zone count~~ — **done (2026-10-01)**: 8 zones, per OpenRGB
+   `STEELSERIES_8Z_LED_COUNT` (see Implementation above).
+4. ~~Brightness coupling~~ — **done (2026-10-01)**: a `0x23` brightness write follows the first
+   colour update and every change, as in OpenRGB's `SetColor`. Whether the LEDs need it is
+   still untested on hardware.
+5. ~~Mark unverified code~~ — **done**: every 8-zone path carries `[EXPERIMENTAL]` (Reference).
 
 ### Validation
 
@@ -461,18 +487,15 @@ Phase 4 (Capability acc.) ── unblocked ────────────�
 
 ## 10. Open questions / blockers
 
-1. **Apex 3 TKL zone count:** code registers **9** zones (`mod.rs:581`, `zone_mapping.rs:311`)
-   but OpenRGB models it as **8**. Confirm the true count before mapping `set_zone_colors`.
-2. **Report ID / framing — resolved by code read (2026-08-18):** `HidDeviceType::Keyboard::
-   includes_report_id()` is `true`, so `RgbZoneCommand::serialize` writes a leading `0x00`
-   report-ID byte then `[0x21][zone_selector][R G B]×N`, matching the 65-byte (1+64) OpenRGB
-   report exactly. No code change needed here; still worth confirming the write actually reaches
-   the device on the hidraw path during hardware retest.
-3. **Brightness coupling:** still open. No brightness/apply write is sent automatically by
-   `set_color`/`set_zone_colors` today. Also note the command-code table mismatch found in the
-   research update above: code's `CommandCode::Brightness = 0x22`, but OpenRGB's table (quoted in
-   §4) has `0x22 = rainbow wave` / `0x23 = brightness` — untested which byte this SKU actually
-   wants for brightness, if a brightness write turns out to be required at all.
+1. **Apex 3 TKL zone count:** code now registers **8** zones, as OpenRGB does (§4,
+   Implementation 2026-10-01); untested on hardware.
+2. **Report ID / framing:** the 2026-08-18 reading missed that `write_padded_report(..., true)`
+   prepends one more `0x00` to the built report. The Apex 3 TKL and the other OpenRGB families now
+   write the built report as is (§4, Implementation 2026-10-01); the legacy family keeps the extra
+   byte.
+3. **Brightness coupling:** the Apex 3 TKL now sends OpenRGB's `0x23` brightness after the first
+   colour update and on change (§4, Implementation 2026-10-01); the legacy `0x22` stays only on
+   the legacy family. Untested on hardware.
 4. **Hardware access:** Phases 1 and 2 both need the physical devices for final confirmation; the
    owner has the Apex Pro TKL 2023 and acked checking the OpenRGB reference for #173 (2026-06-15).
 5. **Close-out:** #211 and #165 are implemented but still open on GitHub — confirm on hardware and

@@ -9,10 +9,11 @@ use super::headsets::{Headset, HeadsetModel};
 use super::hid_reports::ConnectionHealth;
 use super::keyboards::apex::Apex3Tkl;
 use super::keyboards::apex_pro_tkl_2023::ApexProTkl2023;
+use super::keyboards::protocol::{KeyboardKind, keyboard_profile, openrgb_control_interface};
 use super::keyboards::{GenericKeyboard, Keyboard};
 use super::product_ids::{
-    APEX_3_TKL, APEX_PRO_TKL_2023, APEX_PRO_TKL_2023_WIRELESS, APEX_PRO_TKL_2023_WIRELESS_2, APEX_PRO_TKL_2024,
-    APEX_PRO_TKL_WIRELESS_2024, APEX_PRO_TKL_WIRELESS_2024_DONGLE,
+    APEX_PRO_TKL_2023_WIRELESS, APEX_PRO_TKL_2023_WIRELESS_2, APEX_PRO_TKL_WIRELESS_2024,
+    APEX_PRO_TKL_WIRELESS_2024_DONGLE,
 };
 use super::{
     DeviceInfo, DeviceType, STEELSERIES_CONTROL_USAGE_PAGE, device_name_from_product_id, device_type_from_product_id,
@@ -32,11 +33,17 @@ use crate::{Error, Result, STEELSERIES_VENDOR_ID};
 /// 3. The legacy per-PID interface table, for hardware where no vendor-defined page was seen
 ///    (kept as a fallback since the wireless PIDs are unverified against this ranking).
 /// 4. Standard OS-facing pages (Generic Desktop `0x0001`, Consumer `0x000C`) never qualify.
+///
+/// [EXPERIMENTAL] Above all of these: the interface OpenRGB opens for the keyboards it matches
+/// by interface number alone (Apex 3, Apex M750, old Apex), see `openrgb_control_interface`.
 fn control_score(usage_page: u16, interface_number: i32, product_id: u16, device_type: DeviceType) -> Option<u32> {
     if device_type == DeviceType::Headset
         && let Some(model) = super::headsets::model_for_product_id(product_id)
     {
         return headset_control_score(model, usage_page, interface_number);
+    }
+    if device_type == DeviceType::Keyboard && openrgb_control_interface(product_id) == Some(interface_number) {
+        return Some(4_000_000);
     }
     if usage_page == STEELSERIES_CONTROL_USAGE_PAGE {
         return Some(3_000_000 - interface_number.max(0) as u32);
@@ -478,18 +485,13 @@ impl DeviceManager {
             }
             Err(e) => return Err(e),
         };
+        // The keyboard's lighting family comes from the same PID table.
         let generic_keyboard = GenericKeyboard::new(info.clone(), hid_device);
 
-        // Wrap in specific implementation if available
-        match info.product_id {
-            APEX_3_TKL => Ok(Box::new(Apex3Tkl::new(generic_keyboard))),
-            APEX_PRO_TKL_2023
-            | APEX_PRO_TKL_2023_WIRELESS
-            | APEX_PRO_TKL_2023_WIRELESS_2
-            | APEX_PRO_TKL_2024
-            | APEX_PRO_TKL_WIRELESS_2024_DONGLE
-            | APEX_PRO_TKL_WIRELESS_2024 => Ok(Box::new(ApexProTkl2023::new(generic_keyboard))),
-            _ => Ok(Box::new(generic_keyboard)),
+        match keyboard_profile(info.product_id).kind {
+            KeyboardKind::Apex3Tkl => Ok(Box::new(Apex3Tkl::new(generic_keyboard))),
+            KeyboardKind::ApexProTkl2023 => Ok(Box::new(ApexProTkl2023::new(generic_keyboard))),
+            KeyboardKind::Generic => Ok(Box::new(generic_keyboard)),
         }
     }
 
@@ -917,6 +919,7 @@ pub fn print_device_summary(manager: &DeviceManager) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::devices::product_ids::{APEX_3, APEX_350, APEX_M750, APEX_OG, APEX_PRO_TKL_2023};
 
     fn create_test_device_info(serial: Option<String>) -> DeviceInfo {
         DeviceInfo {
@@ -1008,6 +1011,19 @@ mod tests {
             Some(1_000_000)
         );
         assert_eq!(control_score(0x0001, 0, other_pid, DeviceType::Keyboard), None);
+    }
+
+    #[test]
+    fn test_control_score_prefers_openrgb_interface_for_legacy_models() {
+        // OpenRGB opens interface 3 (Apex 3), 2 (Apex M750) and 0 (old Apex) regardless of usage
+        // page; that interface outranks any vendor page on another interface.
+        for (pid, interface) in [(APEX_3, 3), (APEX_M750, 2), (APEX_OG, 0), (APEX_350, 0)] {
+            let documented = control_score(0x0001, interface, pid, DeviceType::Keyboard).unwrap();
+            let vendor_elsewhere = control_score(0xFFC0, interface + 1, pid, DeviceType::Keyboard).unwrap();
+            assert!(documented > vendor_elsewhere, "PID {pid:#06x}");
+        }
+        // Models outside that list are unaffected.
+        assert_eq!(control_score(0x0001, 0, APEX_PRO_TKL_2023, DeviceType::Keyboard), None);
     }
 
     #[test]

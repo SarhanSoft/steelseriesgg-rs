@@ -3,24 +3,30 @@
 use super::{GenericKeyboard, Keyboard};
 use crate::Result;
 use crate::devices::key_mapping::{KeyAddress, KeyId, KeyMapping};
+use crate::devices::settings::{Configurable, SettingDescriptor, SettingValue};
 use crate::devices::zone_mapping::{ZoneEffect, ZoneMapping};
 use crate::devices::{Device, DeviceInfo, DeviceType};
 use crate::rgb::{Color, PerKeyEffect};
 use async_trait::async_trait;
 
 /// Apex 3 TKL specific implementation.
+///
+/// [EXPERIMENTAL] (Reference: OpenRGB `SteelSeriesApex8ZoneController`) Lighting, brightness and
+/// apply go through the inner keyboard's 8-zone family: colours `[0x00][0x21][0xFF][R G B] x 8`
+/// and brightness `[0x00][0x23][0..=0x10]`, written as built, no `0x09` apply.
 pub struct Apex3Tkl {
     inner: GenericKeyboard,
 }
 
 impl Apex3Tkl {
-    /// Zone count for Apex 3 TKL (10-zone RGB).
-    pub const ZONE_COUNT: usize = 9;
+    /// Zone count for Apex 3 TKL ([EXPERIMENTAL] 8 zones, OpenRGB `STEELSERIES_8Z_LED_COUNT`).
+    pub const ZONE_COUNT: usize = 8;
 
     /// Product ID for Apex 3 TKL.
     pub const PRODUCT_ID: u16 = 0x1622;
 
-    /// HID command: RGB effect control
+    /// HID command written by [`Self::set_rgb_effect`]. OpenRGB documents `0x23` as the
+    /// brightness command of this family, so that method most likely sets brightness.
     pub const CMD_RGB_EFFECT: u8 = 0x23;
 
     /// HID command: OSD navigation
@@ -157,6 +163,16 @@ crate::impl_keyboard_with_delegation!(Apex3Tkl, {
         self.inner.draw_oled(frame).await
     }
 });
+
+impl Configurable for Apex3Tkl {
+    fn setting_descriptors(&self) -> Vec<SettingDescriptor> {
+        self.inner.setting_descriptors()
+    }
+
+    fn apply_setting(&mut self, id: &str, value: &SettingValue) -> Result<()> {
+        self.inner.apply_setting(id, value)
+    }
+}
 
 impl std::ops::Deref for Apex3Tkl {
     type Target = GenericKeyboard;
