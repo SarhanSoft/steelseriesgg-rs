@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, mpsc};
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use super::headsets::{GenericHeadset, Headset};
 use super::hid_reports::ConnectionHealth;
@@ -306,7 +306,7 @@ impl DeviceManager {
             self.devices.insert(path, info);
         }
 
-        info!("Found {} SteelSeries device(s)", self.devices.len());
+        debug!("Found {} SteelSeries HID collection(s)", self.devices.len());
         Ok(())
     }
 
