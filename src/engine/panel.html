@@ -114,6 +114,8 @@ textarea { width: 100%; min-height: 72px; background: var(--panel2); border: 1px
     <button class="tab" data-tab="devices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="7" width="20" height="11" rx="2"/><path d="M6 11h.01M10 11h.01M14 11h.01M18 11h.01M7 15h10"/></svg>Devices</button>
     <button class="tab" data-tab="lighting"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>Lighting</button>
     <button class="tab" data-tab="profiles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Profiles</button>
+    <button class="tab" data-tab="audio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/></svg>Audio</button>
+    <button class="tab" data-tab="bindings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/><path d="M11 7h4a2 2 0 0 1 2 2v4"/></svg>Key bindings</button>
     <button class="tab" data-tab="screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="11" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>Screen</button>
     <button class="tab" data-tab="moments"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/></svg>Moments</button>
     <button class="tab" data-tab="about"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>About</button>
@@ -177,7 +179,7 @@ function batteryView(st) {
 }
 
 // ---------- state ----------
-const VIEWS_ORDER = ['devices', 'lighting', 'profiles', 'screen', 'moments', 'about'];
+const VIEWS_ORDER = ['devices', 'lighting', 'audio', 'bindings', 'profiles', 'screen', 'moments', 'about'];
 let state = { snapshot: null, selected: params.get('device'), tab: VIEWS_ORDER.includes(params.get('tab')) ? params.get('tab') : 'devices' };
 
 async function refresh() {
@@ -506,6 +508,161 @@ async function viewScreen() {
   return out;
 }
 
+const CHANNELS = [['game', 'Game'], ['chat', 'Chat'], ['media', 'Media'], ['aux', 'Aux'], ['mic', 'Microphone']];
+function channelCfg(cfg, ch) { return ch === 'mic' ? cfg.mic : cfg.channels[ch]; }
+
+async function viewAudio() {
+  const out = [...header('Audio', 'Sonar for Linux: separate Game, Chat, Media and Aux devices, ChatMix, equalizers and a clean microphone.'), ...banners()];
+  let view;
+  try { view = await call({ cmd: 'mixer' }); } catch (e) { out.push(el('div', { class: 'banner bad' }, e.message)); return out; }
+  const mixer = (patch, msg) => run({ cmd: 'mixer', patch }, msg).then(v => { state.mixerView = v; return v; });
+  const later = debounce((patch) => mixer(patch), 250);
+  const cfg = view.config;
+  for (const w of view.warnings) out.push(el('div', { class: 'banner' }, w));
+  out.push(el('div', { class: 'card' }, el('h2', {}, 'Mixer'),
+    el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'Enable'), el('small', {}, view.running ? 'Running — apps see the SteelSeries devices' : view.enabled ? 'Enabled, waiting for the daemon' : 'Off')),
+      el('div', { class: 'row-control' }, el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: view.enabled, onchange: async e => {
+        await run({ cmd: 'mixer', enabled: e.target.checked }, e.target.checked ? 'Mixer on' : 'Mixer off'); render(); } }), el('span')))),
+    el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'Output'), el('small', {}, 'Headset or speakers every channel plays into')),
+      el('div', { class: 'row-control' }, el('select', { onchange: e => mixer({ output: e.target.value }, 'Output changed') },
+        el('option', { value: 'auto', selected: cfg.output === 'auto' }, 'Automatic (prefer SteelSeries)'),
+        view.outputs.map(o => el('option', { value: o.name, selected: cfg.output === o.name }, o.description || o.name))))),
+    el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'ChatMix'), el('small', {}, 'Balance between Game and Chat (the headset dial moves this too)')),
+      el('div', { class: 'row-control' }, el('span', { class: 'muted' }, 'Game'),
+        el('input', { type: 'range', min: -100, max: 100, value: Math.round(((100 - cfg.chatmix.game) - (100 - cfg.chatmix.chat))), oninput: e => later({ chatmix_balance: +e.target.value }) }),
+        el('span', { class: 'muted' }, 'Chat')))));
+
+  const channels = el('div', { class: 'card' }, el('h2', {}, 'Channels'));
+  for (const [id, label] of CHANNELS) {
+    const c = channelCfg(cfg, id);
+    const num = el('span', { class: 'num' }, c.volume + '%');
+    const presetName = c.eq.preset || 'Custom';
+    const eqBox = el('div', { style: 'display:none;width:100%' });
+    const gains = c.eq.bands.map(b => b.gain);
+    eqBox.append(el('div', { class: 'eq' }, c.eq.bands.map((b, i) => {
+      const val = el('span', {}, `${gains[i] > 0 ? '+' : ''}${gains[i]}`);
+      return el('div', { class: 'eq-band' }, val, el('input', { type: 'range', min: -12, max: 12, step: 0.5, value: gains[i],
+        oninput: e => { gains[i] = +e.target.value; val.textContent = `${gains[i] > 0 ? '+' : ''}${gains[i]}`; later({ eq_gains: [id, gains] }); } }),
+        b.freq >= 1000 ? `${b.freq / 1000}k` : `${b.freq}`);
+    })));
+    channels.append(el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, label)),
+      el('div', { class: 'row-control' },
+        el('input', { type: 'range', min: 0, max: 100, value: c.volume, oninput: e => { num.textContent = e.target.value + '%'; later({ volume: [id, +e.target.value] }); } }), num,
+        el('label', { class: 'switch', title: 'Mute' }, el('input', { type: 'checkbox', checked: !c.muted, onchange: e => mixer({ mute: [id, !e.target.checked] }) }), el('span')),
+        el('select', { onchange: e => { if (e.target.value !== 'Custom') mixer({ eq_preset: [id, e.target.value] }, `${label}: ${e.target.value}`).then(render); } },
+          [...view.presets, ...(view.presets.includes(presetName) ? [] : ['Custom'])].map(p => el('option', { value: p, selected: p === presetName }, p))),
+        el('button', { class: 'btn', onclick: () => { eqBox.style.display = eqBox.style.display === 'none' ? 'block' : 'none'; } }, 'EQ'),
+        eqBox)));
+  }
+  out.push(channels);
+
+  out.push(el('div', { class: 'card' }, el('h2', {}, 'Microphone'),
+    el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'Input'), el('small', {}, 'Physical microphone behind "SteelSeries Microphone"')),
+      el('div', { class: 'row-control' }, el('select', { onchange: e => mixer({ input: e.target.value }, 'Microphone changed') },
+        el('option', { value: 'auto', selected: cfg.mic.input === 'auto' }, 'Automatic (prefer SteelSeries)'),
+        view.inputs.map(o => el('option', { value: o.name, selected: cfg.mic.input === o.name }, o.description || o.name))))),
+    el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'Noise suppression'), el('small', {}, 'Removes keyboard clicks and background noise (ClearCast)')),
+      el('div', { class: 'row-control' }, el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: cfg.mic.noise_suppression.enabled, onchange: e => mixer({ noise_suppression: e.target.checked }, 'Saved') }), el('span'))))));
+
+  const streamRows = CHANNELS.map(([id, label]) => {
+    const lvl = cfg.streamer.mix[id];
+    const num = el('span', { class: 'num' }, lvl.volume + '%');
+    return el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, label)), el('div', { class: 'row-control' },
+      el('input', { type: 'range', min: 0, max: 100, value: lvl.volume, oninput: e => { num.textContent = e.target.value + '%'; later({ stream_volume: [id, +e.target.value] }); } }), num));
+  });
+  out.push(el('div', { class: 'card' }, el('h2', {}, 'Streamer mode'),
+    el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'Separate stream mix'), el('small', {}, 'Adds a "SteelSeries Stream" device for OBS with its own levels')),
+      el('div', { class: 'row-control' }, el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: cfg.streamer.enabled, onchange: async e => { await mixer({ streamer: e.target.checked }, 'Saved'); render(); } }), el('span')))),
+    cfg.streamer.enabled ? streamRows : null,
+    el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, 'Virtual surround'), el('small', {}, 'Game channel; needs a SOFA file set in mixer.toml')),
+      el('div', { class: 'row-control' }, el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: cfg.spatial.enabled, onchange: e => mixer({ spatial: e.target.checked }, 'Saved') }), el('span'))))));
+
+  const apps = view.status?.apps || [];
+  const appRows = apps.map(a => {
+    const name = a.process_binary || a.application_name || `stream ${a.index}`;
+    return el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, a.application_name || name), el('small', {}, a.media_name || '')),
+      el('div', { class: 'row-control' }, el('select', { onchange: e => mixer({ route: { field: 'any', pattern: name, channel: e.target.value } }, `${name} → ${e.target.value}`) },
+        CHANNELS.filter(([id]) => id !== 'mic').map(([id, label]) => el('option', { value: id, selected: (a.channel || a.rule_channel) === id }, label)))));
+  });
+  out.push(el('div', { class: 'card' }, el('h2', {}, 'Applications'),
+    appRows.length ? appRows : el('p', { class: 'muted', style: 'margin:0' }, view.running ? 'No application is playing sound.' : 'Start the mixer to see applications.'),
+    el('p', { class: 'muted', style: 'margin:14px 0 6px;font-size:12px' }, 'Rules (first match wins):'),
+    el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px' }, cfg.routing.rules.map(r => el('span', { class: 'badge', style: 'color:var(--muted);border-color:var(--line)' },
+      `${r.pattern} → ${r.channel} `, el('a', { href: '#', style: 'color:var(--bad);text-decoration:none', onclick: async e => { e.preventDefault(); await mixer({ unroute: r.pattern }, 'Rule removed'); render(); } }, '×'))))));
+  return out;
+}
+
+const ACTION_TYPES = [['key', 'Key', 'e.g. ctrl, KEY_A, mouse4'], ['combo', 'Key combination', 'e.g. ctrl+shift+t'], ['text', 'Type text', 'Text to type'], ['launch', 'Launch program', 'e.g. firefox --new-window'],
+  ['media', 'Media key', 'play_pause, next, previous, volume_up, volume_down, mute'], ['mouse', 'Mouse button', 'left, right, middle, side, extra'], ['profile', 'Switch profile', 'Profile name'], ['disabled', 'Disable key', '']];
+function buildAction(type, value) {
+  switch (type) {
+    case 'key': return { key: value };
+    case 'combo': return { combo: value.split('+').map(s => s.trim()).filter(Boolean) };
+    case 'text': return { text: value.replace(/\\n/g, '\n') };
+    case 'launch': { const [command, ...args] = value.trim().split(/\s+/); return { launch: { command, args } }; }
+    case 'media': return { media: value };
+    case 'mouse': return { mouse_button: value };
+    case 'profile': return { switch_profile: value };
+    default: return 'disabled';
+  }
+}
+function describeAction(a) {
+  if (typeof a === 'string') return a === 'disabled' ? 'Disabled' : 'Normal';
+  const [k, v] = Object.entries(a)[0];
+  switch (k) {
+    case 'key': return `Key ${v}`;
+    case 'combo': return `Combination ${v.join(' + ')}`;
+    case 'text': return `Types "${v}"`;
+    case 'launch': return `Launches ${v.command} ${(v.args || []).join(' ')}`;
+    case 'media': return `Media: ${v}`;
+    case 'mouse_button': return `Mouse ${v}`;
+    case 'switch_profile': return `Switches to profile ${v}`;
+    case 'macro': return `Macro (${v.steps.length} steps${v.repeat > 1 ? ', ×' + v.repeat : ''})`;
+    default: return k;
+  }
+}
+
+async function viewBindings() {
+  const out = [...header('Key bindings', 'Rebind keys and mouse buttons on your SteelSeries devices, per profile. Works under X11 and Wayland.'), ...banners()];
+  let data;
+  try { data = await call({ cmd: 'bindings' }); } catch (e) { out.push(el('div', { class: 'banner bad' }, e.message)); return out; }
+  if (data.error) out.push(el('div', { class: 'banner' }, data.error));
+  const list = el('div', { class: 'card' }, el('h2', {}, `Profile: ${data.profile || 'none (one is created when you add a binding)'}`));
+  if (!data.bindings.bindings.length) list.append(el('p', { class: 'muted', style: 'margin:0' }, 'No bindings yet.'));
+  for (const b of data.bindings.bindings) {
+    list.append(el('div', { class: 'row' }, el('div', { class: 'row-label' }, el('b', {}, b.source)), el('div', { class: 'row-control' },
+      el('span', { style: 'flex:1' }, describeAction(b.action), b.mode === 'release' ? el('span', { class: 'muted' }, ' (on release)') : null),
+      el('button', { class: 'btn danger', onclick: async () => { await run({ cmd: 'unbind', profile: data.profile, source: b.source }, `${b.source} restored`); render(); } }, 'Remove'))));
+  }
+  out.push(list);
+
+  const key = el('input', { type: 'text', placeholder: 'Key: capslock, f13, mouse4…', style: 'min-width:180px' });
+  const type = el('select', {}, ACTION_TYPES.map(([id, label]) => el('option', { value: id }, label)));
+  const value = el('input', { type: 'text', placeholder: ACTION_TYPES[0][2], style: 'flex:1;min-width:200px' });
+  type.addEventListener('change', () => { const t = ACTION_TYPES.find(a => a[0] === type.value); value.placeholder = t[2]; value.disabled = type.value === 'disabled'; });
+  out.push(el('div', { class: 'card' }, el('h2', {}, 'Add a binding'), el('div', { class: 'row-control' }, key, type, value,
+    el('button', { class: 'btn primary', onclick: async () => {
+      if (!key.value.trim()) return toast('Choose a key', true);
+      if (type.value !== 'disabled' && !value.value.trim()) return toast('Fill in the action', true);
+      await run({ cmd: 'bind', profile: data.profile, binding: { source: key.value.trim(), action: buildAction(type.value, value.value) } }, 'Binding saved'); render(); } }, 'Add'))));
+
+  const mkey = el('input', { type: 'text', placeholder: 'Key that plays the macro', style: 'min-width:200px' });
+  const status = el('span', { class: 'muted' });
+  out.push(el('div', { class: 'card' }, el('h2', {}, 'Record a macro'),
+    el('p', { class: 'muted', style: 'margin:0 0 10px' }, 'Press Record, type the sequence on your SteelSeries keyboard, then press Esc. Delays are kept.'),
+    el('div', { class: 'row-control' }, mkey, el('button', { class: 'btn primary', onclick: async () => {
+      if (!mkey.value.trim()) return toast('Choose the key that plays the macro', true);
+      status.textContent = 'Recording… press Esc to finish';
+      try {
+        const rec = await call({ cmd: 'macro_record', stop_key: null, timeout_secs: 30 });
+        if (!rec.steps.length) { status.textContent = 'Nothing recorded'; return; }
+        await run({ cmd: 'bind', profile: data.profile, binding: { source: mkey.value.trim(), action: { macro: { steps: rec.steps, repeat: 1, mode: 'once' } } } }, `Macro with ${rec.steps.length} steps saved`);
+        render();
+      } catch (e) { status.textContent = e.message; }
+    } }, 'Record'), status)));
+  return out;
+}
+
 async function viewMoments() {
   const out = [...header('Moments', 'Keep the last seconds of gameplay in memory and save them as a clip on demand.'), ...banners()];
   let st;
@@ -535,7 +692,7 @@ async function viewAbout() {
   return out;
 }
 
-const VIEWS = { devices: viewDevices, lighting: viewLighting, profiles: viewProfiles, screen: viewScreen, moments: viewMoments, about: viewAbout };
+const VIEWS = { devices: viewDevices, lighting: viewLighting, audio: viewAudio, bindings: viewBindings, profiles: viewProfiles, screen: viewScreen, moments: viewMoments, about: viewAbout };
 let rendering = false;
 async function render() {
   if (rendering) return; rendering = true;
@@ -562,6 +719,25 @@ const demo = {
   lighting: { effect: { Static: { color: { r: 255, g: 106, b: 19 } } }, brightness: 90 },
   profiles: [{ name: 'Default', description: 'Everyday', apps: [], active: true }, { name: 'FPS', description: 'Low DPI, red lighting', apps: ['cs2', 'valorant.exe'], active: false }],
   oledIdle: { mode: 'clock' },
+  bindings: [{ source: 'KEY_CAPSLOCK', action: { key: 'KEY_LEFTCTRL' } }, { source: 'BTN_SIDE', action: { combo: ['KEY_LEFTCTRL', 'KEY_C'] } }, { source: 'KEY_F13', action: { macro: { steps: [{ tap: 'KEY_G' }, { delay: 30 }, { tap: 'KEY_G' }], repeat: 1, mode: 'once' } } }],
+  mixer: (() => {
+    const bands = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+    const eq = (preset, g) => ({ preset, bands: bands.map((f, i) => ({ type: 'peaking', freq: f, q: 1, gain: g[i] || 0 })) });
+    const ch = (v, preset, g = []) => ({ volume: v, muted: false, eq: eq(preset, g) });
+    const lvl = v => ({ volume: v, muted: false });
+    return { enabled: true, running: true, presets: ['Flat', 'Bass Boost', 'FPS Footsteps', 'Voice Clarity', 'Treble Boost', 'Movie', 'Music'], warnings: [],
+      outputs: [{ name: 'alsa_output.usb-SteelSeries_Arctis_Nova_Pro', description: 'Arctis Nova Pro Wireless', steelseries: true }, { name: 'alsa_output.pci-0000_00_1f.3.analog-stereo', description: 'Built-in Audio', steelseries: false }],
+      inputs: [{ name: 'alsa_input.usb-SteelSeries_Arctis_Nova_Pro', description: 'Arctis Nova Pro Wireless Mic', steelseries: true }],
+      config: { output: 'auto', chatmix: { game: 100, chat: 70 },
+        channels: { game: ch(90, 'FPS Footsteps', [-2, -1, 0, 0, 1, 2, 4, 5, 3, 1]), chat: ch(80, 'Voice Clarity'), media: ch(60, 'Music'), aux: ch(100, 'Flat') },
+        mic: { enabled: true, input: 'auto', volume: 85, muted: false, noise_suppression: { enabled: true, backend: 'webrtc', vad_threshold: 50 }, eq: eq('Flat', []) },
+        streamer: { enabled: false, mix: { game: lvl(70), chat: lvl(100), media: lvl(40), aux: lvl(100), mic: lvl(100) } },
+        spatial: { enabled: false, sofa_path: null },
+        routing: { default_channel: 'game', rules: [{ field: 'any', pattern: '*discord*', channel: 'chat' }, { field: 'any', pattern: 'spotify*', channel: 'media' }, { field: 'any', pattern: 'firefox*', channel: 'media' }] } },
+      status: { apps: [{ index: 41, application_name: 'Counter-Strike 2', process_binary: 'cs2', media_name: 'audio stream', sink: 'ssgg_game', channel: 'game', rule_channel: 'game' },
+        { index: 42, application_name: 'Discord', process_binary: 'Discord', media_name: 'Voice', sink: 'ssgg_chat', channel: 'chat', rule_channel: 'chat' },
+        { index: 43, application_name: 'Spotify', process_binary: 'spotify', media_name: 'Song', sink: 'ssgg_media', channel: 'media', rule_channel: 'media' }], warnings: [] } };
+  })(),
   moments: { enabled: true, recording: true, replay_seconds: 30, output_dir: '~/Videos/SteelSeries Moments', last_error: null },
   devices: [
     { key: '1038:1628:DEMO1', name: 'Apex Pro TKL (2023)', kind: 'Keyboard', product_id: 0x1628, status: { extra: {} }, own: null, capabilities: ['lighting', 'per_key', 'settings', 'oled'],
@@ -611,6 +787,23 @@ async function demoCall(cmd) {
     case 'profile_delete': demo.profiles = demo.profiles.filter(p => p.name !== cmd.name); return { deleted: cmd.name };
     case 'profile_apps': demo.profiles.find(p => p.name === cmd.name).apps = cmd.apps; return { profile: cmd.name };
     case 'oled': if (cmd.idle) demo.oledIdle = cmd.idle; return { idle: demo.oledIdle };
+    case 'mixer': {
+      if (cmd.enabled != null) { demo.mixer.enabled = cmd.enabled; demo.mixer.running = cmd.enabled; }
+      const p = cmd.patch || {}, cfg = demo.mixer.config;
+      if (p.volume) channelCfg(cfg, p.volume[0]).volume = p.volume[1];
+      if (p.mute) channelCfg(cfg, p.mute[0]).muted = p.mute[1];
+      if (p.eq_preset) channelCfg(cfg, p.eq_preset[0]).eq.preset = p.eq_preset[1];
+      if (p.eq_gains) { const eq = channelCfg(cfg, p.eq_gains[0]).eq; eq.bands.forEach((b, i) => b.gain = p.eq_gains[1][i]); eq.preset = null; }
+      if (p.streamer != null) cfg.streamer.enabled = p.streamer;
+      if (p.noise_suppression != null) cfg.mic.noise_suppression.enabled = p.noise_suppression;
+      if (p.route) { cfg.routing.rules = cfg.routing.rules.filter(r => r.pattern !== p.route.pattern); cfg.routing.rules.unshift(p.route); }
+      if (p.unroute) cfg.routing.rules = cfg.routing.rules.filter(r => r.pattern !== p.unroute);
+      return demo.mixer;
+    }
+    case 'bindings': return { profile: 'FPS', bindings: { bindings: demo.bindings }, running: true, error: null };
+    case 'bind': demo.bindings = demo.bindings.filter(b => b.source !== cmd.binding.source); demo.bindings.push(cmd.binding); return { profile: 'FPS' };
+    case 'unbind': demo.bindings = demo.bindings.filter(b => b.source !== cmd.source); return { profile: 'FPS' };
+    case 'macro_record': await new Promise(r => setTimeout(r, 800)); return { steps: [{ tap: 'KEY_G' }, { delay: 40 }, { tap: 'KEY_G' }] };
     case 'moments_status': return demo.moments;
     case 'moments_enable': demo.moments.enabled = cmd.enabled; demo.moments.recording = cmd.enabled; if (cmd.replay_seconds) demo.moments.replay_seconds = cmd.replay_seconds; return demo.moments;
     case 'moments_save': return { saved_to: demo.moments.output_dir };
