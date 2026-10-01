@@ -1,28 +1,52 @@
 //! GameSense HTTP server for game integration.
 //!
-//! Implements a compatible GameSense API that games can connect to
-//! for reactive RGB lighting and device feedback.
+//! Implements the SteelSeries GameSense SDK HTTP API (`game_metadata`, `register_game_event`,
+//! `bind_game_event`, `game_event`, `multiple_game_events`, `game_heartbeat`, `stop_game`,
+//! `remove_game_event`, `remove_game`) so games can drive lighting, OLED screens and tactile
+//! feedback. Handlers are evaluated here; the results are published as [`GameSenseOutput`]s
+//! on a broadcast channel ([`GameSenseServer::subscribe`]) for device code to show.
+//!
+//! The builder types further down ([`Handler`], [`ColorHandler`], [`EventBinding`], presets)
+//! are kept for compatibility; the server parses incoming handlers into [`handlers::HandlerSpec`].
 
+mod core_props;
+mod eval;
+pub mod handlers;
+mod output;
 mod server;
+mod zone_map;
 
-pub use server::GameSenseServer;
+pub use core_props::{
+    CORE_PROPS_FILE, core_props_json, core_props_targets, discover_prefix_core_props, parse_library_folders,
+    remove_core_props, system_core_props_path, write_core_props, write_core_props_to,
+};
+pub use output::{
+    DeviceType, Flash, GameSenseOutput, LightTarget, Rate, ScreenContent, ScreenLine, ScreenSize, TactileStep,
+};
+pub use server::{DEFAULT_HEARTBEAT_TIMEOUT, GameSenseServer};
+pub use zone_map::{
+    ZoneSpec, hid_to_key_id, key_id_to_hid, keyboard_zone_hid_codes, keyboard_zone_keys, parse_zone_number,
+    resolve_zone, target_for_hid_codes,
+};
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Game registration request.
+/// `game_metadata` request.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GameMetadata {
-    /// Game identifier (uppercase, no spaces).
+    /// Game identifier (upper-case A-Z, 0-9, hyphen, underscore).
     pub game: String,
 
     /// Display name for the game.
-    pub game_display_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_display_name: Option<String>,
 
     /// Developer/publisher name.
-    pub developer: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub developer: Option<String>,
 
-    /// Optional deinitialization timeout in milliseconds.
+    /// Idle time before the game is deactivated, 1000-60000 ms (default 15000).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deinitialize_timer_length_ms: Option<u32>,
 }
@@ -43,8 +67,9 @@ pub struct GameEvent {
 /// Event data payload.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct EventData {
-    /// Numeric value (0-100 typically).
-    pub value: i32,
+    /// Numeric value. Optional for events registered with `value_optional`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<i64>,
 
     /// Optional frame data for complex events.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -154,6 +179,37 @@ pub struct RangeColor {
     pub low: i32,
     pub high: i32,
     pub color: ColorSpec,
+}
+
+impl From<&ColorSpec> for crate::rgb::Color {
+    fn from(spec: &ColorSpec) -> Self {
+        crate::rgb::Color::new(spec.red, spec.green, spec.blue)
+    }
+}
+
+impl From<&ColorHandler> for handlers::Ranged<handlers::ColorValue> {
+    fn from(handler: &ColorHandler) -> Self {
+        use handlers::{ColorValue, RangeEntry, Ranged};
+        match handler {
+            ColorHandler::Static { red, green, blue } => {
+                Ranged::Static(ColorValue::Solid(crate::rgb::Color::new(*red, *green, *blue)))
+            }
+            ColorHandler::Gradient { gradient } => Ranged::Static(ColorValue::Gradient {
+                zero: (&gradient.zero).into(),
+                hundred: (&gradient.hundred).into(),
+            }),
+            ColorHandler::Range { color } => Ranged::Ranges(
+                color
+                    .iter()
+                    .map(|r| RangeEntry {
+                        low: i64::from(r.low),
+                        high: i64::from(r.high),
+                        value: Ranged::Static(ColorValue::Solid((&r.color).into())),
+                    })
+                    .collect(),
+            ),
+        }
+    }
 }
 
 /// Screen data for OLED display.
