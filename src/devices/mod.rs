@@ -462,42 +462,59 @@ pub mod product_ids {
     pub const APEX_5_2024: u16 = 0x1650;
     pub const APEX_7_2024: u16 = 0x1652;
 
-    // Headsets - Arctis Series
-    // Source: GG firmware registry, 2026-05-26.
+    // Headsets - Arctis / Arctis Nova.
+    // PIDs from HeadsetControl (lib/devices/steelseries_*.hpp) and OpenRGB (Arctis 5), checked
+    // against the GG firmware registry names in docs/development/devices.md. Every PID here has
+    // an entry in `headsets::MODELS`, which is what `device_type_from_product_id` and
+    // `device_name_from_product_id` read. Wireless models use the dongle / base-station PID
+    // (GG "tx"); the headset-side "rx" PIDs carry no control protocol and are not listed.
+    pub const ARCTIS_5_2017: u16 = 0x1250;
     pub const ARCTIS_PRO: u16 = 0x1252;
+    pub const ARCTIS_7: u16 = 0x1260;
+    pub const ARCTIS_PRO_GAMEDAC: u16 = 0x1280;
     pub const ARCTIS_PRO_WIRELESS: u16 = 0x1290;
-    pub const ARCTIS_5: u16 = 0x12AA; // arctis_5_2018
-    // 0x12AD is the Arctis 7 (2018) TX dongle in GG firmware. Also used as Arctis 1 ID.
-    pub const ARCTIS_1: u16 = 0x12AD;
-    pub const ARCTIS_1_WIRELESS: u16 = 0x12B3; // arctis_1w_tx
-    pub const ARCTIS_9: u16 = 0x12C2; // arctis_9_tx
-    pub const ARCTIS_NOVA_PRO_WIRED: u16 = 0x12CB; // arctis_nova_pro (wired, GG firmware)
-    // 0x12CF not found in GG firmware registry; community-reported PID for Arctis 7 2019.
-    pub const ARCTIS_7_2019: u16 = 0x12CF;
-    // 0x12E0 is the Nova Pro Wireless TX dongle in GG firmware (arctis_nova_pro_wireless_tx).
-    pub const ARCTIS_NOVA_PRO: u16 = 0x12E0;
-    // 0x12E4 not found in GG firmware registry; keeping for backward compat.
-    pub const ARCTIS_NOVA_PRO_WIRELESS: u16 = 0x12E4;
-    pub const ARCTIS_NOVA_3: u16 = 0x12EC; // arctis_nova_3
-    // 0x12EA and 0x12EE not in GG firmware registry; may be community-sourced or wrong.
-    // GG's Arctis Nova 5 uses 0x2230 (RX) / 0x2232 (TX).
-    pub const ARCTIS_NOVA_5: u16 = 0x12EA;
-    pub const ARCTIS_NOVA_1: u16 = 0x12EE;
-    // Arctis Nova 7 series (unverified — GG firmware names only, no protocol confirmation).
-    pub const ARCTIS_NOVA_7_RX: u16 = 0x2200;
-    pub const ARCTIS_NOVA_7_TX: u16 = 0x2202;
-    pub const ARCTIS_NOVA_7X_RX: u16 = 0x2204;
-    pub const ARCTIS_NOVA_7X_TX: u16 = 0x2206;
-    pub const ARCTIS_NOVA_7P_RX: u16 = 0x2208;
-    pub const ARCTIS_NOVA_7P_TX: u16 = 0x220A;
-    // Arctis Nova 5 correct PIDs (GG firmware); 0x12EA above may be wrong.
-    pub const ARCTIS_NOVA_5_RX: u16 = 0x2230;
-    pub const ARCTIS_NOVA_5_TX: u16 = 0x2232;
-    // Arctis Nova Pro Omni — confirmed added in PR #244.
+    pub const ARCTIS_5: u16 = 0x12AA;
+    // GG firmware names this arctis_7_2018_tx; HeadsetControl calls it the Arctis 7 2019.
+    pub const ARCTIS_7_2019: u16 = 0x12AD;
+    pub const ARCTIS_1_WIRELESS: u16 = 0x12B3;
+    pub const ARCTIS_1_WIRELESS_XBOX: u16 = 0x12B6;
+    pub const ARCTIS_9: u16 = 0x12C2;
+    // GG firmware name only (arctis_nova_pro); no published control protocol.
+    pub const ARCTIS_NOVA_PRO_WIRED: u16 = 0x12CB;
+    pub const ARCTIS_7P: u16 = 0x12D5;
+    pub const ARCTIS_7X: u16 = 0x12D7;
+    pub const ARCTIS_NOVA_PRO_WIRELESS: u16 = 0x12E0;
+    pub const ARCTIS_NOVA_PRO_WIRELESS_XBOX: u16 = 0x12E5;
+    pub const ARCTIS_NOVA_3: u16 = 0x12EC;
+    pub const ARCTIS_NOVA_7: u16 = 0x2202;
+    pub const ARCTIS_NOVA_7X: u16 = 0x2206;
+    pub const ARCTIS_NOVA_7P: u16 = 0x220A;
+    pub const ARCTIS_7_PLUS: u16 = 0x220E;
+    pub const ARCTIS_7_PLUS_PS5: u16 = 0x2212;
+    pub const ARCTIS_7_PLUS_XBOX: u16 = 0x2216;
+    pub const ARCTIS_NOVA_5: u16 = 0x2232;
+    pub const ARCTIS_7_PLUS_DESTINY: u16 = 0x2236;
+    pub const ARCTIS_NOVA_7_DIABLO_IV: u16 = 0x223A;
+    pub const ARCTIS_NOVA_5X: u16 = 0x2253;
+    pub const ARCTIS_NOVA_7X_V2: u16 = 0x2258;
+    // GG firmware names this arctis_nova_3_wireless_tx; HeadsetControl calls it the Nova 3P.
+    pub const ARCTIS_NOVA_3P_WIRELESS: u16 = 0x2269;
+    pub const ARCTIS_NOVA_3X_WIRELESS: u16 = 0x226D;
+    pub const ARCTIS_NOVA_7_WOW: u16 = 0x227A;
+    pub const ARCTIS_NOVA_7_GEN2: u16 = 0x227E;
+    // GG firmware name only (arctis_nova_pro_omni_tx); no published control protocol.
     pub const ARCTIS_NOVA_PRO_OMNI: u16 = 0x2290;
-    // Arctis Nova 3 Wireless (unverified — GG firmware names only).
-    pub const ARCTIS_NOVA_3_WIRELESS_RX: u16 = 0x2267;
-    pub const ARCTIS_NOVA_3_WIRELESS_TX: u16 = 0x2269;
+    pub const ARCTIS_NOVA_7P_GEN2: u16 = 0x2298;
+    pub const ARCTIS_NOVA_7X_GEN2: u16 = 0x229E;
+    // The `_V2` / `_ALT` Nova 7 PIDs report battery in percent (HeadsetControl: new PIDs after
+    // the January 2026 firmware update, or later hardware revisions).
+    pub const ARCTIS_NOVA_7_V2: u16 = 0x22A1;
+    pub const ARCTIS_NOVA_7X_ALT: u16 = 0x22A4;
+    pub const ARCTIS_NOVA_7X_ALT_V2: u16 = 0x22A5;
+    pub const ARCTIS_NOVA_7P_V2: u16 = 0x22A7;
+    pub const ARCTIS_NOVA_7_DIABLO_IV_V2: u16 = 0x22A9;
+    pub const ARCTIS_NOVA_7X_V2_ALT: u16 = 0x22AD;
+    pub const ARCTIS_GAMEBUDS: u16 = 0x230A;
 }
 
 /// Get device type from product ID.
@@ -530,31 +547,7 @@ pub fn device_type_from_product_id(product_id: u16) -> DeviceType {
         | APEX_5_2024
         | APEX_7_2024 => DeviceType::Keyboard,
 
-        // Headsets
-        ARCTIS_PRO
-        | ARCTIS_PRO_WIRELESS
-        | ARCTIS_5
-        | ARCTIS_1
-        | ARCTIS_1_WIRELESS
-        | ARCTIS_9
-        | ARCTIS_NOVA_PRO_WIRED
-        | ARCTIS_7_2019
-        | ARCTIS_NOVA_PRO
-        | ARCTIS_NOVA_PRO_WIRELESS
-        | ARCTIS_NOVA_3
-        | ARCTIS_NOVA_5
-        | ARCTIS_NOVA_1
-        | ARCTIS_NOVA_7_RX
-        | ARCTIS_NOVA_7_TX
-        | ARCTIS_NOVA_7X_RX
-        | ARCTIS_NOVA_7X_TX
-        | ARCTIS_NOVA_7P_RX
-        | ARCTIS_NOVA_7P_TX
-        | ARCTIS_NOVA_5_RX
-        | ARCTIS_NOVA_5_TX
-        | ARCTIS_NOVA_PRO_OMNI
-        | ARCTIS_NOVA_3_WIRELESS_RX
-        | ARCTIS_NOVA_3_WIRELESS_TX => DeviceType::Headset,
+        pid if headsets::model_for_product_id(pid).is_some() => DeviceType::Headset,
 
         pid if mice::model_for_product_id(pid).is_some() => DeviceType::Mouse,
 
@@ -589,31 +582,10 @@ pub fn device_name_from_product_id(product_id: u16) -> &'static str {
         APEX_PRO_MINI_2024 => "Apex Pro Mini (2024)",
         APEX_5_2024 => "Apex 5 (2024)",
         APEX_7_2024 => "Apex 7 (2024)",
-        ARCTIS_PRO => "Arctis Pro",
-        ARCTIS_PRO_WIRELESS => "Arctis Pro Wireless",
-        ARCTIS_5 => "Arctis 5",
-        ARCTIS_1 => "Arctis 1 / Arctis 7 (2018)",
-        ARCTIS_1_WIRELESS => "Arctis 1 Wireless",
-        ARCTIS_9 => "Arctis 9",
-        ARCTIS_NOVA_PRO_WIRED => "Arctis Nova Pro",
-        ARCTIS_7_2019 => "Arctis 7 (2019)",
-        ARCTIS_NOVA_PRO => "Arctis Nova Pro Wireless (TX)",
-        ARCTIS_NOVA_PRO_WIRELESS => "Arctis Nova Pro Wireless",
-        ARCTIS_NOVA_3 => "Arctis Nova 3",
-        ARCTIS_NOVA_5 => "Arctis Nova 5",
-        ARCTIS_NOVA_1 => "Arctis Nova 1",
-        ARCTIS_NOVA_7_RX => "Arctis Nova 7 (RX)",
-        ARCTIS_NOVA_7_TX => "Arctis Nova 7 (TX)",
-        ARCTIS_NOVA_7X_RX => "Arctis Nova 7X (RX)",
-        ARCTIS_NOVA_7X_TX => "Arctis Nova 7X (TX)",
-        ARCTIS_NOVA_7P_RX => "Arctis Nova 7P (RX)",
-        ARCTIS_NOVA_7P_TX => "Arctis Nova 7P (TX)",
-        ARCTIS_NOVA_5_RX => "Arctis Nova 5 (RX)",
-        ARCTIS_NOVA_5_TX => "Arctis Nova 5 (TX)",
-        ARCTIS_NOVA_PRO_OMNI => "Arctis Nova Pro Omni",
-        ARCTIS_NOVA_3_WIRELESS_RX => "Arctis Nova 3 Wireless (RX)",
-        ARCTIS_NOVA_3_WIRELESS_TX => "Arctis Nova 3 Wireless (TX)",
-        pid => mice::model_for_product_id(pid).map_or("Unknown SteelSeries Device", |m| m.name),
+        pid => headsets::model_for_product_id(pid)
+            .map(|m| m.name)
+            .or_else(|| mice::model_for_product_id(pid).map(|m| m.name))
+            .unwrap_or("Unknown SteelSeries Device"),
     }
 }
 
@@ -678,7 +650,7 @@ mod tests {
 
         // Test device_type_from_product_id
         assert_eq!(device_type_from_product_id(APEX_PRO), DeviceType::Keyboard);
-        assert_eq!(device_type_from_product_id(ARCTIS_1), DeviceType::Headset);
+        assert_eq!(device_type_from_product_id(ARCTIS_1_WIRELESS), DeviceType::Headset);
         assert_eq!(device_type_from_product_id(0xFFFF), DeviceType::Unknown);
 
         // Test device_name_from_product_id

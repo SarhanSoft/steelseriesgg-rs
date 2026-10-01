@@ -1,86 +1,227 @@
-//! Headset device support (Arctis series).
+//! Headset support (Arctis and Arctis Nova series).
+//!
+//! Data-driven: [`models::MODELS`] lists every known headset with its control interface, the
+//! settings it offers ([`capability::Capability`], each carrying that model's byte encoding)
+//! and its status protocol ([`status::StatusProtocol`]). One implementation,
+//! [`SteelSeriesHeadset`], serves every model through the uniform settings model
+//! ([`Configurable`]).
+//!
+//! [EXPERIMENTAL] Every protocol here comes from published reference drivers (HeadsetControl,
+//! OpenRGB, nova-chatmix-linux). None of it has been tested on hardware by this project.
 
-use super::{Device, DeviceInfo, DeviceType, write_padded_report};
-use crate::{Error, Result};
+pub mod capability;
+pub mod lighting;
+pub mod models;
+pub mod report;
+pub mod status;
+
+use std::time::{Duration, Instant};
+
 use hidapi::HidDevice;
 use parking_lot::Mutex;
-use std::sync::Arc;
+use tracing::debug;
 
-/// Trait for headset-specific functionality.
-pub trait Headset: Device {
-    /// Get battery level (0-100, or None if wired/unknown).
-    fn battery_level(&mut self) -> Result<Option<u8>>;
+use self::capability::Capability;
+use self::lighting::LightingState;
+use self::report::{Report, ReportKind};
+use self::status::{Parsed, Query, StatusProtocol};
+use super::settings::{ChatMix, Configurable, DeviceStatus, SettingDescriptor, SettingValue};
+use super::{Device, DeviceInfo, DeviceType};
+use crate::{Error, Result};
 
-    /// Set sidetone level (0-100).
-    fn set_sidetone(&mut self, level: u8) -> Result<()>;
+pub use self::models::MODELS;
 
-    /// Set microphone volume (0-100).
-    fn set_mic_volume(&mut self, volume: u8) -> Result<()>;
+/// How long to wait for a status answer. Status is polled, so a missing answer must never block.
+pub const READ_TIMEOUT: Duration = Duration::from_millis(100);
+/// Largest answer any reference reads (HeadsetControl `STATUS_BUF_SIZE`).
+const READ_BUFFER_LEN: usize = 128;
+/// Upper bound on stale reports discarded before a request, so a chatty device cannot stall us.
+const MAX_DRAINED_REPORTS: usize = 32;
 
-    /// Mute/unmute microphone.
-    fn set_mic_mute(&mut self, muted: bool) -> Result<()>;
-
-    /// Set equalizer preset.
-    fn set_eq_preset(&mut self, preset: EqPreset) -> Result<()>;
-
-    /// Get ChatMix balance (-1.0 = full game, 1.0 = full chat).
-    fn chat_mix(&mut self) -> Result<f32>;
-
-    /// Set auto-off timeout in minutes (0 = disabled).
-    fn set_auto_off(&mut self, minutes: u8) -> Result<()>;
+/// Static description of one headset model.
+#[derive(Debug)]
+pub struct HeadsetModel {
+    pub product_id: u16,
+    pub name: &'static str,
+    /// USB interface that carries the control endpoint.
+    pub interface_number: i32,
+    /// Usage page of the control collection on that interface, when the reference names one.
+    pub usage_page: Option<u16>,
+    /// Settings this model offers, in display order.
+    pub capabilities: &'static [Capability],
+    /// How to read battery, ChatMix and link state; `None` when the reference reads nothing.
+    pub status: Option<StatusProtocol>,
+    /// Where the protocol facts come from.
+    pub source: &'static str,
 }
 
-/// Equalizer presets.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EqPreset {
-    Flat,
-    Bass,
-    Focus,
-    Smiley,
-    Custom,
+impl HeadsetModel {
+    /// The uniform settings descriptors for this model.
+    pub fn descriptors(&self) -> Vec<SettingDescriptor> {
+        self.capabilities.iter().map(Capability::descriptor).collect()
+    }
+
+    pub fn capability(&self, id: &str) -> Option<&'static Capability> {
+        self.capabilities.iter().find(|c| c.id() == id)
+    }
 }
 
-/// Generic SteelSeries headset implementation.
-pub struct GenericHeadset {
+/// Look up a headset model by USB product ID.
+pub fn model_for_product_id(product_id: u16) -> Option<&'static HeadsetModel> {
+    MODELS.iter().find(|m| m.product_id == product_id)
+}
+
+/// Headset-specific functionality on top of the uniform settings model.
+pub trait Headset: Device + Configurable {
+    fn model(&self) -> &'static HeadsetModel;
+}
+
+/// The three HID operations a headset needs. Implemented for [`HidDevice`]; tests substitute a
+/// recording fake.
+pub trait HidTransport: Send {
+    fn write_output(&self, data: &[u8]) -> Result<()>;
+    fn write_feature(&self, data: &[u8]) -> Result<()>;
+    /// Read one input report, waiting at most `timeout_ms`. Returns 0 when nothing arrived.
+    fn read_timeout(&self, buf: &mut [u8], timeout_ms: i32) -> Result<usize>;
+}
+
+impl HidTransport for HidDevice {
+    fn write_output(&self, data: &[u8]) -> Result<()> {
+        self.write(data).map(|_| ()).map_err(Error::from)
+    }
+
+    fn write_feature(&self, data: &[u8]) -> Result<()> {
+        self.send_feature_report(data).map_err(Error::from)
+    }
+
+    fn read_timeout(&self, buf: &mut [u8], timeout_ms: i32) -> Result<usize> {
+        HidDevice::read_timeout(self, buf, timeout_ms).map_err(Error::from)
+    }
+}
+
+/// Open the right headset implementation for an opened HID handle.
+pub fn open(info: DeviceInfo, device: HidDevice) -> Result<Box<dyn Headset>> {
+    let model = model_for_product_id(info.product_id).ok_or(Error::UnsupportedDevice {
+        vendor_id: info.vendor_id,
+        product_id: info.product_id,
+    })?;
+    Ok(Box::new(SteelSeriesHeadset::new(info, model, Box::new(device))))
+}
+
+/// The one headset implementation; everything model-specific comes from its [`HeadsetModel`].
+pub struct SteelSeriesHeadset {
     info: DeviceInfo,
-    device: Option<Arc<Mutex<HidDevice>>>,
+    model: &'static HeadsetModel,
+    transport: Option<Mutex<Box<dyn HidTransport>>>,
+    lighting: LightingState,
+    /// Last ChatMix position the device pushed on its own (Nova Pro Wireless).
+    last_chatmix: Option<ChatMix>,
 }
 
-impl GenericHeadset {
-    /// Create a new headset instance.
-    pub fn new(info: DeviceInfo, device: HidDevice) -> Self {
+impl SteelSeriesHeadset {
+    pub fn new(info: DeviceInfo, model: &'static HeadsetModel, transport: Box<dyn HidTransport>) -> Self {
         Self {
             info,
-            device: Some(Arc::new(Mutex::new(device))),
+            model,
+            transport: Some(Mutex::new(transport)),
+            lighting: LightingState::default(),
+            last_chatmix: None,
         }
     }
 
-    /// Send a HID report to the headset.
-    fn send_report(&mut self, data: &[u8]) -> Result<()> {
-        let device = self
-            .device
+    fn transport(&self) -> Result<parking_lot::MutexGuard<'_, Box<dyn HidTransport>>> {
+        self.transport
             .as_ref()
-            .ok_or(Error::DeviceCommunication("Device not connected".to_string()))?;
-        let device = device.lock();
-
-        // Headsets typically use 64-byte reports with no report ID prefix.
-        write_padded_report(&device, data, 64, false)
+            .map(Mutex::lock)
+            .ok_or_else(|| Error::DeviceCommunication("Headset not connected".to_string()))
     }
 
-    /// Receive a HID report from the headset.
-    fn receive_report(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let device = self
-            .device
-            .as_ref()
-            .ok_or(Error::DeviceCommunication("Device not connected".to_string()))?;
-        let device = device.lock();
+    /// Write reports in order. Written directly rather than through `write_padded_report`, whose
+    /// duplicate filter would drop a repeated save or status request sent within 50 ms.
+    fn send(&self, reports: &[Report]) -> Result<()> {
+        let transport = self.transport()?;
+        for report in reports {
+            debug!(
+                "{}: sending {:?} report, {} bytes: {:02x?}",
+                self.model.name,
+                report.kind,
+                report.bytes.len(),
+                &report.bytes[..report.bytes.len().min(16)]
+            );
+            match report.kind {
+                ReportKind::Output => transport.write_output(&report.bytes)?,
+                ReportKind::Feature => transport.write_feature(&report.bytes)?,
+            }
+        }
+        Ok(())
+    }
 
-        let len = device.read_timeout(buf, 1000)?;
-        Ok(len)
+    /// Note an unsolicited report if this model's protocol defines it.
+    fn observe(&mut self, protocol: StatusProtocol, report: &[u8]) {
+        if let Some(chatmix) = status::parse_event(protocol, report) {
+            self.last_chatmix = Some(chatmix);
+        }
+    }
+
+    /// Send `query` and wait up to [`READ_TIMEOUT`] for its answer, skipping unsolicited
+    /// reports. Returns `None` when nothing acceptable arrived in time.
+    fn run_query(&mut self, protocol: StatusProtocol, query: &Query) -> Result<Option<Vec<u8>>> {
+        let mut buf = [0u8; READ_BUFFER_LEN];
+        let mut seen = Vec::new();
+
+        {
+            let transport = self.transport()?;
+            for _ in 0..MAX_DRAINED_REPORTS {
+                let n = transport.read_timeout(&mut buf, 0)?;
+                if n == 0 {
+                    break;
+                }
+                seen.push(buf[..n.min(buf.len())].to_vec());
+            }
+        }
+        for report in std::mem::take(&mut seen) {
+            self.observe(protocol, &report);
+        }
+
+        self.send(std::slice::from_ref(&query.request))?;
+
+        let deadline = Instant::now() + READ_TIMEOUT;
+        let mut fallback: Option<Vec<u8>> = None;
+        let mut answer: Option<Vec<u8>> = None;
+        {
+            let transport = self.transport()?;
+            loop {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                let timeout_ms = i32::try_from(remaining.as_millis()).unwrap_or(i32::MAX).max(1);
+                let n = transport.read_timeout(&mut buf, timeout_ms)?;
+                if n == 0 {
+                    break;
+                }
+                let report = buf[..n.min(buf.len())].to_vec();
+                seen.push(report.clone());
+                if protocol.is_event(&report) {
+                    continue;
+                }
+                if query.accept.matches(&report) {
+                    answer = Some(report);
+                    break;
+                }
+                if query.accept.allows_fallback() && fallback.is_none() {
+                    fallback = Some(report);
+                }
+            }
+        }
+        for report in seen {
+            self.observe(protocol, &report);
+        }
+        Ok(answer.or(fallback))
     }
 }
 
-impl Device for GenericHeadset {
+impl Device for SteelSeriesHeadset {
     fn info(&self) -> &DeviceInfo {
         &self.info
     }
@@ -94,89 +235,67 @@ impl Device for GenericHeadset {
     }
 
     fn close(&mut self) -> Result<()> {
-        self.device = None;
+        self.transport = None;
         Ok(())
     }
 
     fn is_connected(&self) -> bool {
-        self.device.is_some()
+        self.transport.is_some()
     }
 
     fn send_raw(&mut self, data: &[u8]) -> Result<()> {
-        self.send_report(data)
+        self.transport()?.write_output(data)
     }
 
     fn receive_raw(&mut self, buf: &mut [u8]) -> Result<usize> {
-        self.receive_report(buf)
+        let timeout_ms = i32::try_from(READ_TIMEOUT.as_millis()).unwrap_or(i32::MAX);
+        self.transport()?.read_timeout(buf, timeout_ms)
     }
 }
 
-impl Headset for GenericHeadset {
-    fn battery_level(&mut self) -> Result<Option<u8>> {
-        // Request battery status
-        self.send_report(&[0x06, 0x18])?;
+impl Configurable for SteelSeriesHeadset {
+    fn setting_descriptors(&self) -> Vec<SettingDescriptor> {
+        self.model.descriptors()
+    }
 
-        let mut buf = [0u8; 64];
-        let len = self.receive_report(&mut buf)?;
+    fn apply_setting(&mut self, id: &str, value: &SettingValue) -> Result<()> {
+        let capability = self
+            .model
+            .capability(id)
+            .ok_or_else(|| Error::Unsupported(format!("setting '{id}' is not supported by the {}", self.model.name)))?;
+        capability.descriptor().validate(value)?;
+        let mut lighting = self.lighting;
+        let reports = capability.encode(value, &mut lighting)?;
+        self.send(&reports)?;
+        self.lighting = lighting;
+        Ok(())
+    }
 
-        if len >= 3 && buf[0] == 0x06 {
-            // Battery level is typically in buf[2]
-            let level = buf[2].min(100);
-            Ok(Some(level))
-        } else {
-            Ok(None)
+    fn read_status(&mut self) -> Result<DeviceStatus> {
+        let mut status = DeviceStatus::default();
+        if let Some(protocol) = self.model.status {
+            for query in protocol.queries() {
+                let Some(answer) = self.run_query(protocol, &query)? else {
+                    debug!("{}: no answer to {:02x?}", self.model.name, &query.request.bytes[..2]);
+                    continue;
+                };
+                if query.parser.parse(&answer, &mut status) == Parsed::Stop {
+                    break;
+                }
+            }
         }
-    }
-
-    fn set_sidetone(&mut self, level: u8) -> Result<()> {
-        let level = level.min(100);
-        let data = [0x06, 0x35, level];
-        self.send_report(&data)
-    }
-
-    fn set_mic_volume(&mut self, volume: u8) -> Result<()> {
-        let volume = volume.min(100);
-        let data = [0x06, 0x37, volume];
-        self.send_report(&data)
-    }
-
-    fn set_mic_mute(&mut self, muted: bool) -> Result<()> {
-        let data = [0x06, 0x39, if muted { 0x01 } else { 0x00 }];
-        self.send_report(&data)
-    }
-
-    fn set_eq_preset(&mut self, preset: EqPreset) -> Result<()> {
-        let preset_code = match preset {
-            EqPreset::Flat => 0x00,
-            EqPreset::Bass => 0x01,
-            EqPreset::Focus => 0x02,
-            EqPreset::Smiley => 0x03,
-            EqPreset::Custom => 0x04,
-        };
-
-        let data = [0x06, 0x33, preset_code];
-        self.send_report(&data)
-    }
-
-    fn chat_mix(&mut self) -> Result<f32> {
-        // Request ChatMix status
-        self.send_report(&[0x06, 0x45])?;
-
-        let mut buf = [0u8; 64];
-        let len = self.receive_report(&mut buf)?;
-
-        if len >= 3 && buf[0] == 0x06 {
-            // ChatMix value: 0 = full game, 128 = balanced, 255 = full chat
-            let raw = buf[2] as f32;
-            let normalized = (raw - 128.0) / 128.0;
-            Ok(normalized.clamp(-1.0, 1.0))
-        } else {
-            Ok(0.0) // Default to balanced
+        if status.chatmix.is_none() {
+            status.chatmix = self.last_chatmix;
         }
-    }
-
-    fn set_auto_off(&mut self, minutes: u8) -> Result<()> {
-        let data = [0x06, 0x31, minutes];
-        self.send_report(&data)
+        Ok(status)
     }
 }
+
+impl Headset for SteelSeriesHeadset {
+    fn model(&self) -> &'static HeadsetModel {
+        self.model
+    }
+}
+
+#[cfg(test)]
+mod tests;
