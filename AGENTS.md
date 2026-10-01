@@ -2,7 +2,7 @@
 
 ## Project context
 
-Open-source SteelSeries GG replacement for Linux. Controls SteelSeries keyboards and headsets via USB HID: RGB lighting effects, a GameSense-compatible HTTP server (port 27301), device profiles, and optional PulseAudio/PipeWire mixer and Sonar integration.
+Open-source SteelSeries GG replacement for Linux. Controls SteelSeries keyboards, mice and headsets via USB HID (lighting, device settings, OLED screens, battery), runs a GameSense-compatible HTTP server (port 27301), a PipeWire Sonar-style mixer, evdev/uinput key bindings and macros, per-game profiles, Moments (gpu-screen-recorder) and a browser control panel (port 27311).
 
 - **Language**: Rust 2024 edition, MSRV 1.97.1
 - **Primary binary**: `ssgg` (`src/main.rs`, clap CLI)
@@ -15,10 +15,35 @@ Open-source SteelSeries GG replacement for Linux. Controls SteelSeries keyboards
 
 ## Quick orientation
 
+### The one seam: `engine::Command`
+
+Every front end (CLI, control panel, profiles, GameSense, autoswitch, bindings) changes devices
+only through `engine::Engine::execute(Command)`. The daemon serves commands on the local control
+API (`engine/control.rs`, token in `$XDG_RUNTIME_DIR/ssgg/control.json`); a CLI with no daemon
+runs the same command on an in-process engine (`cli::call`). Device families expose their
+capabilities as data through `devices::settings::Configurable` (descriptor + value), so a new
+setting needs no CLI or UI change.
+
 ### Primary modules
 
 ```
 src/main.rs                              CLI entry point (clap, subcommands)
+src/cli/                                 Engine-backed CLI commands, daemon, mixer/bindings CLI
+src/engine/mod.rs                        Engine: device registry, hot-plug, lighting frames, status polling
+src/engine/command.rs                    Command enum + snapshots returned to front ends
+src/engine/control.rs                    Local HTTP control API + client (127.0.0.1, bearer token)
+src/engine/state.rs                      engine-state.json (last applied settings, lighting, OLED idle)
+src/engine/screen.rs                     OLED idle/temporary screens
+src/engine/gamesense.rs                  GameSense outputs -> overlays, per-key colours, screens
+src/engine/audio.rs                      Mixer glue (MixerPatch, ChatMix dial)
+src/engine/bindings.rs                   Input-engine glue (profile bindings, notices)
+src/engine/panel.html                    Control panel (single file, `#demo` for simulated devices)
+src/mixer/                               PipeWire Sonar replacement (filter-chain child process, pactl)
+src/input/                               Key bindings/macros (pure remapper + Linux evdev/uinput layer)
+src/oled/                                1-bit frames, font, image dithering, ready-made screens
+src/autoswitch.rs                        Per-program profile switching (process watcher)
+src/moments.rs                           gpu-screen-recorder replay buffer
+src/notify.rs                            notify-send wrapper, battery warning hysteresis
 src/lib.rs                               Public crate root; re-exports prelude
 src/error.rs                             crate::error::Error (thiserror) + Result alias
 src/device_state.rs                      Device state snapshots and diffs
@@ -50,7 +75,11 @@ src/devices/fuzz.rs                    Fuzzing targets for HID report parsing
 src/devices/keyboards/mod.rs           Keyboard device registry
 src/devices/keyboards/apex.rs          Apex series protocol implementation
 src/devices/keyboards/apex_pro_tkl_2023.rs  Apex Pro TKL 2023 (experimental, feature `experimental-apex-2023`)
-src/devices/headsets/mod.rs            Headset protocol implementations
+src/devices/keyboards/protocol.rs      Per-PID keyboard family table (OpenRGB-derived)
+src/devices/keyboards/oled.rs          OLED report encoders per PID
+src/devices/headsets/                  Data-driven headset models (HeadsetControl-derived)
+src/devices/mice/                      Data-driven mouse models (rivalcfg-derived, 76 PIDs)
+src/devices/settings.rs                Configurable trait, SettingDescriptor/Kind/Value, DeviceStatus
 ```
 
 ### Helper binaries (not part of the primary `ssgg` CLI)
@@ -68,6 +97,8 @@ src/bin/sonar_control.rs               Sonar HTTP API exerciser (feature `sonar`
 
 ```
 assets/70-steelseries.rules            udev rules (uaccess; must sort before 73-seat-late.rules)
+assets/ssgg-uinput.conf                modules-load.d entry for key bindings
+assets/ssgg.desktop                    Desktop entry that runs `ssgg ui`
 assets/ssgg.service                    systemd user unit
 docs/development/                      Protocol reverse-engineering notes (historical)
 tests/                                 Integration tests (cors_security, device_readback)
@@ -135,8 +166,8 @@ The `audio` feature requires `libpulse-dev` on Debian/Ubuntu (`sudo apt-get inst
 
 ## Hard constraints
 
-1. **HID reports**: always use `HidReportBuilder` and typed helpers in `src/devices/hid_reports.rs`. Never build raw byte arrays by hand.
-2. **hidapi pin**: keep `hidapi = "=2.6.6"` exactly; changing it requires explicit task justification.
+1. **HID reports**: keyboards use `HidReportBuilder` and the typed helpers in `src/devices/hid_reports.rs`; mice, headsets and OLED use typed, unit-tested encoders inside their own modules. Never scatter raw byte arrays through logic.
+2. **hidapi pin**: keep `hidapi = "=2.6.7"` exactly (see `Cargo.toml`); changing it requires explicit task justification.
 3. **GameSense CORS**: enforce localhost-only origin; the policy may only be tightened, never relaxed.
 4. **Propagate errors**: use `?` or return an explicit `Err` value — no `unwrap` or `expect` in production paths.
 5. **Error types**: `crate::error::Error` with `thiserror` at library boundaries; `anyhow` with `context()` in `src/main.rs` and binaries.
@@ -192,7 +223,8 @@ Read only the lines you need. Use `rg --files src/` or `ls src/` for structure d
 
 ## Key reminders
 
-- **HID reports**: always use `HidReportBuilder` — never build raw byte arrays by hand.
+- **HID reports**: typed encoders only (`HidReportBuilder` for keyboards) — never raw byte arrays in logic.
+- **Verification levels**: every device setting carries `Verification::{Hardware, Reference, Guess}`; only hardware-tested settings may be `Hardware`.
 - **GameSense CORS**: keep the localhost-only origin policy; tightening is fine, loosening is not.
 - **Toolchain and CI facts**: always read `rust-toolchain.toml` and `.github/workflows/ci.yml` — treat memory as unreliable.
 - **Scope discipline**: implement exactly what the task asks; leave surrounding code untouched.

@@ -5,364 +5,291 @@
 ![GitHub repo size](https://img.shields.io/github/repo-size/Ven0m0/steelseriesgg-rs)
 [![Maintainability](https://qlty.sh/gh/Ven0m0/projects/steelseriesgg-rs/maintainability.svg)](https://qlty.sh/gh/Ven0m0/projects/steelseriesgg-rs)
 
-Open-source [SteelSeries GG](https://steelseries.com/gg/engine) replacement for Linux. Control SteelSeries keyboards and headsets: RGB lighting, GameSense-compatible server, profiles, and (optional) audio/Sonar integration.
+Open-source replacement for [SteelSeries GG](https://steelseries.com/gg) on Linux: device
+settings and lighting (Engine), a Sonar-style audio mixer, GameSense for games, OLED screens,
+key bindings and macros, per-game profiles, instant-replay clips (Moments), and a control
+panel in the browser.
+
+> **Hardware status.** Only the Apex Pro TKL (2023) was ever tested on real hardware by this
+> project. Every other protocol comes from a published open-source driver (OpenRGB, rivalcfg,
+> HeadsetControl, apex-tux, nova-chatmix-linux) and is pinned by unit tests, but has not been
+> tried here. The CLI and the control panel mark such settings **untested**, and extrapolated
+> ones **guess**. Reports from real devices are what turn them into confirmed support.
 
 ## Quickstart
 
 ```bash
 git clone https://github.com/Ven0m0/steelseriesgg-rs.git
 cd steelseriesgg-rs
-cargo build -r
+cargo build --release
+sudo install -Dm644 assets/70-steelseries.rules /etc/udev/rules.d/70-steelseries.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger   # then replug your devices
 ./target/release/ssgg devices
 ```
 
-To run the daemon as a user service after installing the package:
+Run the background service (hot-plug, animations, battery alerts, GameSense, mixer, bindings):
 
 ```bash
+sudo install -Dm755 target/release/ssgg /usr/local/bin/ssgg
+install -Dm644 assets/ssgg.service ~/.config/systemd/user/ssgg.service
+sed -i 's|/usr/bin/ssgg|/usr/local/bin/ssgg|' ~/.config/systemd/user/ssgg.service
 systemctl --user daemon-reload
-systemctl --user enable --now ssgg.service
+systemctl --user enable --now ssgg
+ssgg ui          # opens the control panel
 ```
 
-## Features
+## What it does, next to GG on Windows
 
-- **RGB lighting**: static, breathing, spectrum, wave, reactive, gradient, custom per-zone, off
-- **GameSense server**: HTTP API compatible with SteelSeries GameSense
-- **Profiles**: save/load device configurations
-- **Daemon mode**: background service with animations and GameSense overlays
-- **Audio mixer** (feature `audio`): domain model, PulseAudio/PipeWire wiring planned
-- **Sonar API** (feature `sonar`): control SteelSeries Sonar via HTTP (Sonar must be running)
+| GG feature | Here | How |
+|---|---|---|
+| Lighting (Prism), effects, per-zone/per-key | Yes | `ssgg rgb`, panel *Lighting*; one effect synced across keyboards and mice, or per device |
+| Device settings: DPI stages, polling rate, buttons, sleep timers, sidetone, mic volume, EQ, ANC... | Yes, per model | `ssgg settings <device>`, `ssgg set <device> <setting> <value>`, panel *Devices* |
+| Battery level and low-battery alerts | Yes | `ssgg devices`, desktop notification at 20 % and 10 % |
+| Actuation (Apex Pro), Rapid Tap | Where a reference exists | `ssgg actuation set 1.2`, `ssgg set keyboard rapid_tap on` |
+| OLED screen (Apex 5/7/Pro) | Yes | `ssgg oled clock\|stats\|nowplaying\|text\|image`, panel *Screen* |
+| Sonar: Game/Chat/Media/Aux/Mic devices, ChatMix, 10-band EQ, noise reduction, streamer mix | Yes, on PipeWire | `ssgg mixer ...`, panel *Audio* |
+| Key bindings, macros, macro recording, launch apps | Yes (X11 and Wayland) | `ssgg bind`, `ssgg macro record`, panel *Key bindings* |
+| Profiles and per-game switching | Yes | `ssgg profile save/load/apps`, switches while a linked program (also Proton games) runs |
+| GameSense (game events → lighting and screens) | Yes | built into the daemon on port 27301; `coreProps.json` is also written into Proton/Wine prefixes |
+| Moments (instant replay) | Yes, via gpu-screen-recorder | `ssgg moments enable`, `ssgg moments save` (bind it to a key) |
+| Polling rate | Device-side per model; kernel-side up to 1000 Hz | `ssgg set mouse polling_rate 1000`, `sudo ssgg pollrate mouse 1000 --persistent` |
 
-## Supported Devices
+Not provided: firmware updates (a wrong guess could brick a device), Rapid Trigger on boards
+whose protocol is not public, tactile/vibration events, and GG's account and cloud features.
+Virtual surround needs a SOFA HRTF file set in `mixer.toml`.
 
-### Keyboards
-- Apex Pro / Apex Pro TKL / Apex Pro TKL 2023 (PID `0x1630` - pending hardware confirmation)
-- Apex 3 / Apex 3 TKL
-- Apex 5
-- Apex 7 / Apex 7 TKL
+## Devices
 
-### Headsets
-- Arctis 1 / Arctis 1 Wireless
-- Arctis 5 / Arctis 7 / Arctis 7 (2019 Edition)
-- Arctis 9 / Arctis Pro / Arctis Pro Wireless
-- Arctis Nova Pro / Arctis Nova Pro Wireless
-- Arctis Nova Pro Omni (PID `0x2290` - pending hardware confirmation)
-- Arctis Nova 5 / Arctis Nova 3 / Arctis Nova 1
+- **Keyboards:** Apex Pro, Pro TKL, Pro Mini, Pro (2023/2024 Gen 3, wired and wireless), Apex 3,
+  3 TKL, 5, 7, 7 TKL, 9, M750, original Apex. Details: [protocol-keyboard.md](docs/development/protocol-keyboard.md),
+  [oled.md](docs/development/oled.md).
+- **Mice:** 76 models — Aerox 3/5/9 (wired and wireless), Prime family, Rival 3/5/100/110/300/310/500/600/650/700,
+  Sensei, Kana, Kinzu. Details: [mice.md](docs/development/mice.md).
+- **Headsets:** Arctis 1/5/7/7+/9/Pro/Pro Wireless, Arctis Nova 3/3P/5/7/7P/Pro Wireless, GameBuds.
+  Details: [devices.md](docs/development/devices.md).
+
+`ssgg devices` lists what is connected and what each device can do.
 
 ## Installation
 
-### Prerequisites
-
-- Linux with udev
-- Rust 1.97.1 (MSRV, pinned in `rust-toolchain.toml` and enforced via `rust-version` in `Cargo.toml`)
-
-No extra HID development packages are required for the default source build.
-
-### Arch package
+### Arch Linux
 
 ```bash
-sudo pacman -U ssgg-*.pkg.tar.zst
+makepkg -si          # uses the PKGBUILD in this repository
 ```
 
-What you get: `/usr/bin/ssgg`, systemd user unit, udev rules, docs.
+Installs `/usr/bin/ssgg`, the user service, udev rules (`70-steelseries.rules`), the uinput
+module loader and a desktop entry ("SteelSeries GG" opens the control panel).
 
-After install:
-```bash
-sudo usermod -aG input $USER
-sudo udevadm control --reload-rules
-sudo udevadm trigger
-systemctl --user daemon-reload
-systemctl --user enable --now ssgg.service   # optional
-```
-For boot without login: `sudo loginctl enable-linger $USER`.
+### From source (any distribution)
 
-### Build from source
+Rust 1.97.1 or newer (`rustup` recommended; distribution Rust may be too old). No C libraries
+are needed for the default build: HID uses a pure-Rust hidraw backend.
 
 ```bash
-git clone https://github.com/Ven0m0/steelseriesgg-rs.git
-cd steelseriesgg-rs
 cargo build --release
 ```
 
-For the optional `audio` feature on Debian/Ubuntu, install `libpulse-dev` first:
+Then install the binary, `assets/70-steelseries.rules` (udev), `assets/ssgg-uinput.conf`
+(`/etc/modules-load.d/`, for key bindings), `assets/ssgg.service` (systemd user unit) and
+`assets/ssgg.desktop` as shown in the Quickstart.
 
-```bash
-sudo apt install libpulse-dev
-```
+### Runtime tools (optional, per feature)
 
-Binary: `target/release/ssgg`.
+| Feature | Packages |
+|---|---|
+| Audio mixer | `pipewire`, `wireplumber`, `pactl` (Arch `libpulse`, Debian/Fedora `pulseaudio-utils`); `noise-suppression-for-voice` for RNNoise |
+| Now playing on OLED | `playerctl` |
+| Moments | `gpu-screen-recorder` |
+| Notifications | `libnotify` (`notify-send`) |
+| Opening the panel | `xdg-utils` |
 
-The release profile uses link-time optimization, symbol stripping, and single codegen unit for an optimized binary.
+### Permissions
 
-### Optional Build Optimizations
-
-The project includes optional build optimizations in `.cargo/config.toml`. These are not required but can improve build times:
-
-**sccache** (compilation cache):
-```bash
-cargo install sccache
-# Then uncomment the rustc-wrapper line in .cargo/config.toml
-```
-
-**lld** (faster linker):
-```bash
-# Debian/Ubuntu
-sudo apt install lld
-
-# Fedora
-sudo dnf install lld
-
-# Arch Linux
-sudo pacman -S lld
-
-# Then uncomment the lld line in .cargo/config.toml
-```
-
-### Device permissions (udev)
-
-```bash
-sudo cp assets/99-steelseries.rules /etc/udev/rules.d/
-sudo udevadm control --reload-rules
-sudo udevadm trigger
-sudo usermod -aG input $USER
-```
-Log out/in to apply the group change.
+The udev rules give the logged-in user access to SteelSeries HID devices (`uaccess`), to their
+input event nodes and to `/dev/uinput` (for key bindings). Replug devices after installing them.
+For a service that runs without a login session (`loginctl enable-linger`), also add yourself to
+the `input` group.
 
 ## Usage
 
-### List devices
+### Devices and settings
 
 ```bash
-ssgg devices
+ssgg devices                         # what is connected, battery, lighting, capabilities
+ssgg settings mouse                  # every setting with its range and current value
+ssgg set mouse sensitivity 400,800,1600
+ssgg set mouse polling_rate 1000
+ssgg set headset sidetone 2
+ssgg set headset equalizer 3,2,0,0,-1,0,1,2,3,2
+ssgg set "aerox 3" save now          # store on the mouse itself, where supported
 ```
 
-### RGB lighting
+A device can be named by type (`keyboard`, `mouse`, `headset`), part of its name, or the key
+shown by `ssgg devices`. Settings are remembered and re-applied when a device reconnects.
 
-Set a static color:
+### Lighting
+
 ```bash
-ssgg rgb --color red
-ssgg rgb --color "#ff5500"
+ssgg rgb color "#ff5500"                     # every device, synced
+ssgg rgb effect breathing --color cyan --speed 0.5
+ssgg rgb effect wave --color red --color2 blue
+ssgg rgb --device mouse color green          # this device only
+ssgg rgb --device mouse sync                 # follow the synced lighting again
+ssgg rgb brightness 60
 ```
 
-Set brightness:
+Animated effects play while the daemon runs.
+
+### OLED screen
+
 ```bash
-ssgg rgb --brightness 80
+ssgg oled clock          # idle screen: clock | stats | nowplaying | off
+ssgg oled text "Hello" "World" --seconds 10
+ssgg oled image ~/Pictures/logo.gif --idle
 ```
 
-Apply effects:
+### Audio mixer (Sonar for Linux)
+
 ```bash
-ssgg rgb --effect breathing --color cyan
-ssgg rgb --effect spectrum
-ssgg rgb --effect wave --direction left-to-right
+ssgg mixer enable                    # creates SteelSeries Game/Chat/Media/Aux/Microphone devices
+ssgg mixer                           # status
+ssgg mixer volume chat 70
+ssgg mixer chatmix -30               # -100 all game … 100 all chat; the headset dial also moves it
+ssgg mixer eq game fps_footsteps     # or: ssgg mixer eq game 2,1,0,0,0,1,3,4,2,0
+ssgg mixer route discord chat        # remembered per application
+ssgg mixer noise on                  # microphone noise suppression
+ssgg mixer streamer on               # separate "SteelSeries Stream" mix for OBS
+ssgg mixer disable                   # removes the devices, restores your defaults
 ```
 
-Available effects: `static`, `breathing`, `spectrum`, `wave`, `reactive`, `gradient`, `off`
+Game is set as the default output while the mixer runs; chat programs, browsers and music
+players are routed by built-in rules you can change.
+
+### Key bindings and macros
+
+```bash
+ssgg bind capslock key ctrl
+ssgg bind mouse4 combo ctrl+c
+ssgg bind f13 text "gg wp\n"
+ssgg bind f14 launch firefox --new-window
+ssgg bind f15 media play_pause
+ssgg bind f16 profile fps
+ssgg macro record f17                # type the sequence, press Esc
+ssgg bindings
+ssgg unbind capslock
+```
+
+Bindings belong to the active profile and work below the display server, so X11 and every
+Wayland compositor behave the same. Holding both Ctrl and both Shift keys for two seconds stops
+the bindings in an emergency.
 
 ### Profiles
 
-Save current configuration:
 ```bash
-ssgg profile save my-profile
-```
-
-Load a profile:
-```bash
-ssgg profile load my-profile
-```
-
-List profiles:
-```bash
+ssgg profile save fps -d "Low DPI, red"
+ssgg profile apps fps cs2 valorant.exe   # switch automatically while one of these runs
+ssgg profile load default
 ssgg profile list
 ```
 
-### Audio mixer (feature `audio`)
+A profile stores every device's settings and lighting, the key bindings and (when enabled) the
+mixer settings, per device model.
 
-View audio status:
+### Moments
+
 ```bash
-ssgg audio status
+ssgg moments enable --seconds 30
+ssgg moments save                    # saves the last 30 s to ~/Videos/SteelSeries Moments
 ```
 
-Set volume:
+### Control panel
+
+`ssgg ui` opens the daemon's control panel at `http://127.0.0.1:27311/`. It covers devices,
+lighting, audio, key bindings, profiles, the OLED screen and Moments. Append `#demo` to the
+address to explore it with simulated devices.
+
+### GameSense
+
+The daemon serves the GameSense API on `127.0.0.1:27301` and writes `coreProps.json` to
+`/tmp/steelseries-engine/` and into every existing Steam Proton prefix, `~/.wine` and
+Lutris/Bottles prefixes, so Windows games running under Proton find it. Lighting events reach
+keyboards, mice and per-key zones; screen events reach OLED keyboards. See
+[gamesense-api.md](docs/development/gamesense-api.md).
+
+### Polling rate
+
+Mice that support it change their own rate (`ssgg set mouse polling_rate 1000`). The kernel's
+`usbhid` override is also available and applies to every USB mouse or keyboard:
+
 ```bash
-ssgg audio volume --channel master --level 75
+sudo ssgg pollrate mouse 1000 --persistent   # writes /etc/modprobe.d/ssgg-usbhid.conf
+ssgg pollrate status
 ```
 
-Mute/unmute:
-```bash
-ssgg audio mute --channel game
-ssgg audio unmute --channel game
-```
-
-Adjust chat mix:
-```bash
-ssgg audio chat-mix --balance 25
-```
-
-### SteelSeries Sonar (feature `sonar`)
-
-The Sonar integration provides direct control over the SteelSeries Sonar audio device through its HTTP API. Sonar must be running for these commands to work.
-
-View Sonar status:
-```bash
-ssgg sonar status
-```
-
-Discover the dynamic Sonar API port:
-```bash
-ssgg sonar discover
-```
-
-List audio devices:
-```bash
-ssgg sonar devices
-```
-
-Set volume for a channel (classic mode):
-```bash
-ssgg sonar volume master 80
-ssgg sonar volume game 100
-ssgg sonar volume chat 75
-```
-
-Get current mode:
-```bash
-ssgg sonar mode
-```
-
-Control streamer mode volumes:
-```bash
-# Set monitoring volume
-ssgg sonar streamer monitoring master 75
-ssgg sonar streamer monitoring game 80
-
-# Set streaming volume
-ssgg sonar streamer streaming master 90
-```
-
-List available configurations:
-```bash
-ssgg sonar configs
-```
-
-### GameSense server
-
-Start the GameSense HTTP server:
-```bash
-ssgg server
-```
-
-The server runs on port 27301 by default and is compatible with games that support SteelSeries GameSense.
-
-### Daemon mode
-
-Run as a background daemon with device control and GameSense server:
-```bash
-ssgg daemon
-```
-
-The daemon will run in the foreground and can be stopped gracefully with Ctrl+C or `systemctl --user stop ssgg.service` when running as a systemd service.
-
-Run as systemd user service:
-```bash
-systemctl --user daemon-reload
-systemctl --user enable --now ssgg.service
-journalctl --user -u ssgg.service -f
-```
-
-### Device diagnostics and testing
-
-View HID device logs:
-```bash
-ssgg hid-logs
-```
-
-Run device self-test:
-```bash
-ssgg test-device
-```
-
-Verify device performance metrics:
-```bash
-ssgg verify-performance
-```
-
-Run HID report fuzzing (development tool):
-```bash
-ssgg fuzz
-```
+The kernel route stops at 1000 Hz.
 
 ## Configuration
 
-Configuration is stored in `~/.config/ssgg/config.toml`:
+`~/.config/ssgg/config.toml` (every key optional):
 
 ```toml
+default_profile = "default"   # loaded when the daemon starts
+
 [gamesense]
 enabled = true
-bind = "127.0.0.1"
+bind_address = "127.0.0.1"
 port = 27301
 
-[audio]
-master_volume = 100
-game_volume = 100
-chat_volume = 100
+[control]                     # CLI <-> daemon API and control panel
+enabled = true
+port = 27311
 
-[general]
-default_profile = "default"
-debug = false
+[autoswitch]
+enabled = true
+notify = true
+
+[moments]
+enabled = false
+replay_seconds = 30
+output_dir = ""               # default ~/Videos/SteelSeries Moments
+capture = "screen"            # "portal" on GNOME/KDE Wayland
 ```
 
-## Feature Flags
+Other files in the same folder: `engine-state.json` (last applied settings and lighting),
+`mixer.toml` (audio mixer), `profiles/`.
 
-- `audio` - Enable audio mixer with PulseAudio/PipeWire support
-- `sonar` - Enable SteelSeries Sonar API integration
-- `experimental-apex-2023` - Enable experimental Apex Pro TKL 2023 direct per-key RGB (unverified on hardware)
+## Troubleshooting
 
-By default, no optional features are enabled. The Arch package ships with default features only.
+- **`permission denied` opening a device:** install the udev rules and replug (see Permissions).
+- **A setting does nothing:** it is probably marked *untested* or *guess*. Run with `--debug`,
+  then open an issue with the model, the command and the log.
+- **Key bindings do nothing:** `ssgg bindings` shows the reason; usually `/dev/uinput` access
+  (udev rule, `sudo modprobe uinput`).
+- **Mixer reports missing tools:** install the packages in *Runtime tools*.
+- **Bug report:** `ssgg bug-report` writes a JSON file with system and device diagnostics.
 
-Build with audio support:
+## Development
+
 ```bash
-cargo build --release --features audio
+cargo fmt --all -- --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
 ```
 
-Build with all features:
-```bash
-cargo build --release --all-features
-```
-
-## Helper binaries
-
-The project includes developer and testing utilities:
-
-- `discover_actuation` - Probe actuation firmware commands (development tool)
-- `sonar_control` - SteelSeries Sonar HTTP API exerciser (requires `sonar` feature)
-
-## Dependencies
-
-| Crate | Purpose |
-|-------|---------|
-| hidapi | HID device communication (pinned =2.6.6) |
-| tokio | Async runtime |
-| axum | GameSense HTTP server |
-| reqwest | Sonar HTTP client (optional, `sonar` feature) |
-| serde / serde_json | Serialization |
-| clap | CLI argument parsing |
-| tracing / tracing-subscriber | Logging |
-| thiserror / anyhow | Error handling |
-| libpulse-binding | Audio integration (`audio` feature) |
-| sysinfo | System diagnostics |
-| tabled | Terminal table output |
-| colored | Colored terminal output |
-| indicatif | Progress indicators |
-| chrono | Timestamps for diagnostics |
+Module guides live in [`docs/development/`](docs/development/) and the agent handbook in
+[`AGENTS.md`](AGENTS.md).
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Contributing
-
-Issues and PRs are welcome. Please run `cargo fmt && cargo clippy --all-targets --locked` before submitting.
+MIT — see [LICENSE](LICENSE). Protocol facts were taken from OpenRGB (GPL-2.0),
+HeadsetControl (GPL-3.0), rivalcfg (WTFPL), apex-tux (Unlicense), apexctl (Apache-2.0) and
+nova-chatmix-linux (0BSD); no code from the GPL projects was copied.
 
 ## Acknowledgments
 
-- [hidapi](https://crates.io/crates/hidapi) - HID access
-- [apex-tux](https://github.com/not-jan/apex-tux) and apex7tkl_linux - keyboard inspiration
+- [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB), [rivalcfg](https://github.com/flozz/rivalcfg),
+  [HeadsetControl](https://github.com/Sapd/HeadsetControl), [apex-tux](https://github.com/not-jan/apex-tux),
+  [apexctl](https://github.com/AstroSnail/apexctl), [nova-chatmix-linux](https://github.com/Dymstro/nova-chatmix-linux),
+  [apex-web](https://github.com/trottyva/apex-web), [apex-control](https://github.com/zunuza/apex-control)
+- [hidapi](https://crates.io/crates/hidapi), [gpu-screen-recorder](https://git.dec05eba.com/gpu-screen-recorder/about/)
