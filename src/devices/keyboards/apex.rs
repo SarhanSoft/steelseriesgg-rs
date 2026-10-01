@@ -147,6 +147,15 @@ crate::impl_keyboard_with_delegation!(Apex3Tkl, {
     fn set_actuation_point_mm(&mut self, mm: f32) -> Result<()> {
         self.inner.set_actuation_point_mm(mm)
     }
+
+    // The Apex 3 TKL has no OLED screen; the generic lookup returns `None` / `Unsupported`.
+    fn oled_size(&self) -> Option<(u32, u32)> {
+        self.inner.oled_size()
+    }
+
+    async fn draw_oled(&mut self, frame: &crate::oled::OledFrame) -> Result<()> {
+        self.inner.draw_oled(frame).await
+    }
 });
 
 impl std::ops::Deref for Apex3Tkl {

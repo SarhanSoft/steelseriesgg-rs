@@ -51,6 +51,10 @@ colored = "3.1.1"
 directories = "6.0.0"
 # hidapi is configured per-platform — see [target.*] sections below
 
+# Image decoding for the keyboard OLED screen (src/oled). Only the four formats users are
+# likely to hand us; default features would pull in AVIF/EXR/TIFF/WebP decoders and rayon.
+image = { version = "0.25.10", default-features = false, features = ["png", "gif", "jpeg", "bmp"] }
+
 # Terminal UI
 indicatif = "0.18.6"
 libc = "0.2.189" # For root permission checks (geteuid)
