@@ -23,6 +23,7 @@ pub mod engine;
 pub mod error;
 pub mod fs_utils;
 pub mod gamesense;
+pub mod input;
 pub mod moments;
 pub mod notify;
 pub mod oled;
