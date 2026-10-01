@@ -1054,6 +1054,7 @@ impl Inner {
             devices,
             lighting: self.state.lighting.clone(),
             active_profile: self.state.active_profile.clone(),
+            oled_idle: self.state.oled_idle.clone(),
             warnings: self.open_failures.values().cloned().collect(),
         }
     }

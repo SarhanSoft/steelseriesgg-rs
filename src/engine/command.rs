@@ -130,6 +130,8 @@ pub struct EngineSnapshot {
     pub devices: Vec<DeviceSnapshot>,
     pub lighting: Lighting,
     pub active_profile: Option<String>,
+    /// Idle screen of OLED keyboards.
+    pub oled_idle: super::screen::IdleScreen,
     /// Problems worth showing the user (missing permissions, failed device opens, ...).
     pub warnings: Vec<String>,
 }

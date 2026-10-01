@@ -24,6 +24,12 @@ pub enum IdleScreen {
     Image {
         path: String,
     },
+    /// Raw 1-bit pixels, row-major, MSB first (uploaded from the control panel).
+    Bitmap {
+        width: u32,
+        height: u32,
+        data: Vec<u8>,
+    },
     /// Leave the keyboard's own screen alone.
     Off,
 }
@@ -151,6 +157,14 @@ impl ScreenManager {
                 started: Instant::now(),
                 until: None,
             }),
+            IdleScreen::Bitmap { width, height, data } => Some(Timed {
+                frames: vec![(
+                    OledFrame::from_packed(*width, *height, data.clone())?,
+                    Duration::from_secs(3600),
+                )],
+                started: Instant::now(),
+                until: None,
+            }),
             _ => None,
         };
         self.idle = idle;
@@ -189,7 +203,9 @@ impl ScreenManager {
                 Some(p) => Some(oled::now_playing(&p.title, &p.artist, p.progress)),
                 None => Some(oled::clock(&chrono::Local::now())),
             },
-            IdleScreen::Image { .. } => self.idle_image.as_ref().and_then(|t| t.frame_at(now).cloned()),
+            IdleScreen::Image { .. } | IdleScreen::Bitmap { .. } => {
+                self.idle_image.as_ref().and_then(|t| t.frame_at(now).cloned())
+            }
         }
     }
 

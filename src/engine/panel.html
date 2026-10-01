@@ -90,6 +90,10 @@ input[type=color] { width: 40px; height: 32px; border: 1px solid var(--line); bo
 .toast.err { border-color: #6b2525; color: #ffc4c4; }
 .muted { color: var(--muted); }
 .kv { display: grid; grid-template-columns: 160px 1fr; gap: 8px 14px; }
+.oled-preview { width: 100%; max-width: 512px; aspect-ratio: 128 / 40; image-rendering: pixelated; background: #000; border: 1px solid var(--line); border-radius: 8px; display: block; }
+input[type=file] { color: var(--muted); }
+input[type=file]::file-selector-button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 14px; margin-right: 12px; cursor: pointer; }
+textarea { width: 100%; min-height: 72px; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; color: inherit; font: inherit; resize: vertical; }
 @media (max-width: 860px) {
   .app { grid-template-columns: minmax(0, 1fr); }
   nav { flex-direction: row; flex-wrap: wrap; padding: 10px; }
@@ -110,6 +114,7 @@ input[type=color] { width: 40px; height: 32px; border: 1px solid var(--line); bo
     <button class="tab" data-tab="devices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="7" width="20" height="11" rx="2"/><path d="M6 11h.01M10 11h.01M14 11h.01M18 11h.01M7 15h10"/></svg>Devices</button>
     <button class="tab" data-tab="lighting"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>Lighting</button>
     <button class="tab" data-tab="profiles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Profiles</button>
+    <button class="tab" data-tab="screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="11" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>Screen</button>
     <button class="tab" data-tab="moments"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/></svg>Moments</button>
     <button class="tab" data-tab="about"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>About</button>
     <div class="nav-foot" id="navFoot"></div>
@@ -172,7 +177,7 @@ function batteryView(st) {
 }
 
 // ---------- state ----------
-const VIEWS_ORDER = ['devices', 'lighting', 'profiles', 'moments', 'about'];
+const VIEWS_ORDER = ['devices', 'lighting', 'profiles', 'screen', 'moments', 'about'];
 let state = { snapshot: null, selected: params.get('device'), tab: VIEWS_ORDER.includes(params.get('tab')) ? params.get('tab') : 'devices' };
 
 async function refresh() {
@@ -424,6 +429,83 @@ async function viewProfiles() {
   return out;
 }
 
+// 1-bit conversion for the 128x40 keyboard screen: fit, grayscale, dither, pack MSB-first rows.
+function imageToBitmap(img, dither, invert) {
+  const W = 128, H = 40, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  const scale = Math.min(W / img.width, H / img.height), w = img.width * scale, h = img.height * scale;
+  g.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+  const px = g.getImageData(0, 0, W, H).data, lum = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) { const a = px[i * 4 + 3] / 255; lum[i] = (0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]) * a; }
+  const on = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, old = lum[i], v = old >= 128 ? 255 : 0; on[i] = v ? 1 : 0;
+    if (dither) { const err = old - v;
+      if (x + 1 < W) lum[i + 1] += err * 7 / 16;
+      if (y + 1 < H) { if (x > 0) lum[i + W - 1] += err * 3 / 16; lum[i + W] += err * 5 / 16; if (x + 1 < W) lum[i + W + 1] += err / 16; } }
+  }
+  const data = new Array(W / 8 * H).fill(0);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (on[y * W + x] ^ (invert ? 1 : 0)) data[y * 16 + (x >> 3)] |= 0x80 >> (x & 7);
+  return { width: W, height: H, data };
+}
+function drawBitmap(canvas, bmp) {
+  canvas.width = bmp.width; canvas.height = bmp.height;
+  const g = canvas.getContext('2d'), im = g.createImageData(bmp.width, bmp.height);
+  for (let y = 0; y < bmp.height; y++) for (let x = 0; x < bmp.width; x++) {
+    const lit = bmp.data[y * (bmp.width / 8) + (x >> 3)] & (0x80 >> (x & 7)), i = (y * bmp.width + x) * 4;
+    im.data[i] = im.data[i + 1] = im.data[i + 2] = lit ? 235 : 0; im.data[i + 3] = 255;
+  }
+  g.putImageData(im, 0, 0);
+}
+
+async function viewScreen() {
+  const snap = state.snapshot;
+  const out = [...header('Screen', 'What the OLED on Apex keyboards shows.'), ...banners()];
+  if (!snap) return out;
+  const hasOled = snap.devices.some(d => d.capabilities.includes('oled'));
+  if (!hasOled) out.push(el('div', { class: 'banner' }, 'No connected keyboard has a screen. These controls apply when one is plugged in.'));
+  const idleMode = snap.oled_idle?.mode || 'clock';
+  const seg = el('div', { class: 'seg' });
+  for (const [id, label] of [['clock', 'Clock'], ['stats', 'System stats'], ['now_playing', 'Now playing'], ['off', 'Off']]) {
+    seg.append(el('button', { class: id === idleMode ? 'on' : '', disabled: !hasOled, onclick: async () => {
+      await run({ cmd: 'oled', idle: { mode: id }, clear: true }, 'Idle screen changed'); await refresh(); render(); } }, label));
+  }
+  if (idleMode === 'image' || idleMode === 'bitmap') seg.append(el('button', { class: 'on' }, 'Image'));
+  out.push(el('div', { class: 'card' }, el('h2', {}, 'Idle screen'), el('div', { class: 'row-control' }, seg),
+    el('p', { class: 'muted', style: 'margin:12px 0 0;font-size:12px' }, 'Now playing reads any MPRIS player through playerctl and shows the clock when nothing plays.')));
+
+  const text = el('textarea', { placeholder: 'One line per row', disabled: !hasOled });
+  const secs = el('input', { type: 'number', min: 0, max: 3600, value: 5 });
+  out.push(el('div', { class: 'card' }, el('h2', {}, 'Message'), text,
+    el('div', { class: 'row-control', style: 'margin-top:10px' }, el('span', { class: 'muted' }, 'Show for'), secs, el('span', { class: 'muted' }, 'seconds (0 = until replaced)'),
+      el('button', { class: 'btn primary', disabled: !hasOled, onclick: async () => {
+        const lines = text.value.split('\n').map(l => l.trimEnd()).filter(Boolean); if (!lines.length) return toast('Type something first', true);
+        await run({ cmd: 'oled', content: { type: 'text', lines }, seconds: +secs.value }, 'Shown on the screen'); } }, 'Show'))));
+
+  const preview = el('canvas', { class: 'oled-preview', width: 128, height: 40 });
+  let img = null, bmp = null;
+  const dither = el('input', { type: 'checkbox', checked: true }), invert = el('input', { type: 'checkbox' });
+  const redraw = () => { if (img) { bmp = imageToBitmap(img, dither.checked, invert.checked); drawBitmap(preview, bmp); } };
+  dither.addEventListener('change', redraw); invert.addEventListener('change', redraw);
+  const file = el('input', { type: 'file', accept: 'image/png,image/gif,image/jpeg,image/bmp,image/webp', onchange: e => {
+    const f = e.target.files[0]; if (!f) return;
+    const url = URL.createObjectURL(f); const im = new Image();
+    im.onload = () => { img = im; redraw(); URL.revokeObjectURL(url); }; im.onerror = () => toast('Could not read that image', true); im.src = url; } });
+  const isecs = el('input', { type: 'number', min: 0, max: 3600, value: 10 });
+  out.push(el('div', { class: 'card' }, el('h2', {}, 'Image'), file,
+    el('div', { style: 'margin:12px 0' }, preview),
+    el('div', { class: 'row-control' }, el('label', {}, dither, ' Dither'), el('label', {}, invert, ' Invert')),
+    el('div', { class: 'row-control', style: 'margin-top:10px' }, el('span', { class: 'muted' }, 'Show for'), isecs, el('span', { class: 'muted' }, 'seconds'),
+      el('button', { class: 'btn primary', disabled: !hasOled, onclick: async () => {
+        if (!bmp) return toast('Choose an image first', true);
+        await run({ cmd: 'oled', content: { type: 'bitmap', ...bmp }, seconds: +isecs.value }, 'Shown on the screen'); } }, 'Show'),
+      el('button', { class: 'btn', disabled: !hasOled, onclick: async () => {
+        if (!bmp) return toast('Choose an image first', true);
+        await run({ cmd: 'oled', idle: { mode: 'bitmap', ...bmp }, clear: true }, 'Image is now the idle screen'); await refresh(); } }, 'Use as idle screen')),
+    el('p', { class: 'muted', style: 'margin:12px 0 0;font-size:12px' }, 'For animated GIFs use the CLI: ssgg oled image file.gif --idle')));
+  return out;
+}
+
 async function viewMoments() {
   const out = [...header('Moments', 'Keep the last seconds of gameplay in memory and save them as a clip on demand.'), ...banners()];
   let st;
@@ -453,7 +535,7 @@ async function viewAbout() {
   return out;
 }
 
-const VIEWS = { devices: viewDevices, lighting: viewLighting, profiles: viewProfiles, moments: viewMoments, about: viewAbout };
+const VIEWS = { devices: viewDevices, lighting: viewLighting, profiles: viewProfiles, screen: viewScreen, moments: viewMoments, about: viewAbout };
 let rendering = false;
 async function render() {
   if (rendering) return; rendering = true;
@@ -479,9 +561,10 @@ setInterval(async () => {
 const demo = {
   lighting: { effect: { Static: { color: { r: 255, g: 106, b: 19 } } }, brightness: 90 },
   profiles: [{ name: 'Default', description: 'Everyday', apps: [], active: true }, { name: 'FPS', description: 'Low DPI, red lighting', apps: ['cs2', 'valorant.exe'], active: false }],
+  oledIdle: { mode: 'clock' },
   moments: { enabled: true, recording: true, replay_seconds: 30, output_dir: '~/Videos/SteelSeries Moments', last_error: null },
   devices: [
-    { key: '1038:1628:DEMO1', name: 'Apex Pro TKL (2023)', kind: 'Keyboard', product_id: 0x1628, status: { extra: {} }, own: null, capabilities: ['lighting', 'per_key', 'settings'],
+    { key: '1038:1628:DEMO1', name: 'Apex Pro TKL (2023)', kind: 'Keyboard', product_id: 0x1628, status: { extra: {} }, own: null, capabilities: ['lighting', 'per_key', 'settings', 'oled'],
       settings: [
         { descriptor: { id: 'actuation', label: 'Actuation point', description: 'How far a key travels before it registers (0.1 mm units)', kind: { type: 'range', min: 1, max: 40, step: 1, unit: null }, verification: 'hardware' }, value: { int: 15 } },
         { descriptor: { id: 'brightness', label: 'Hardware brightness', description: '', kind: { type: 'range', min: 0, max: 100, step: 1, unit: '%' }, verification: 'reference' }, value: { int: 100 } },
@@ -506,7 +589,7 @@ const demo = {
   ],
 };
 function demoSnapshot() {
-  return { version: '0.1.5', daemon: true, active_profile: demo.profiles.find(p => p.active)?.name || null, warnings: [], lighting: demo.lighting,
+  return { version: '0.1.5', daemon: true, active_profile: demo.profiles.find(p => p.active)?.name || null, warnings: [], lighting: demo.lighting, oled_idle: demo.oledIdle,
     devices: demo.devices.map(d => ({ key: d.key, name: d.name, kind: d.kind, product_id: d.product_id, status: d.status,
       lighting: d.capabilities.includes('lighting') ? (d.own || demo.lighting) : null, follows_global_lighting: !d.own, capabilities: d.capabilities })) };
 }
@@ -527,6 +610,7 @@ async function demoCall(cmd) {
     case 'profile_load': demo.profiles.forEach(p => p.active = p.name === cmd.name); return demoSnapshot();
     case 'profile_delete': demo.profiles = demo.profiles.filter(p => p.name !== cmd.name); return { deleted: cmd.name };
     case 'profile_apps': demo.profiles.find(p => p.name === cmd.name).apps = cmd.apps; return { profile: cmd.name };
+    case 'oled': if (cmd.idle) demo.oledIdle = cmd.idle; return { idle: demo.oledIdle };
     case 'moments_status': return demo.moments;
     case 'moments_enable': demo.moments.enabled = cmd.enabled; demo.moments.recording = cmd.enabled; if (cmd.replay_seconds) demo.moments.replay_seconds = cmd.replay_seconds; return demo.moments;
     case 'moments_save': return { saved_to: demo.moments.output_dir };
