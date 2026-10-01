@@ -56,3 +56,6 @@ apexctl/
 *.pml.csv
 *.etl
 *.etl.csv
+
+# Agent worktrees (local only)
+.claude/worktrees/

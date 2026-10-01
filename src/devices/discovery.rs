@@ -48,10 +48,7 @@ fn control_score(usage_page: u16, interface_number: i32, product_id: u16, device
         }
         DeviceType::Keyboard => 1,
         DeviceType::Headset => 3,
-        DeviceType::Mouse => match super::mice::model_for_product_id(product_id) {
-            Some(model) => model.interface_number,
-            None => return None,
-        },
+        DeviceType::Mouse => super::mice::model_for_product_id(product_id)?.interface_number,
         DeviceType::Unknown => return None,
     };
     if interface_number == fallback_interface {

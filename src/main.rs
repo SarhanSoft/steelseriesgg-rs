@@ -1372,53 +1372,39 @@ async fn cmd_profile(action: ProfileAction) -> Result<()> {
 async fn cmd_pollrate(action: PollrateAction) -> Result<()> {
     use steelseries_gg::pollrate::{DeviceType, PollRate, get_poll_rate, set_poll_rate};
 
+    async fn set_one(device_type: DeviceType, rate: u32, persistent: bool) -> Result<()> {
+        let poll_rate = PollRate::from_hz(rate)?;
+        set_poll_rate(device_type, poll_rate).await?;
+        println!("Kernel {} polling rate set to {}", device_type.name(), poll_rate);
+        println!("  Applies to every USB {} on this machine.", device_type.name());
+
+        if persistent {
+            #[cfg(target_os = "linux")]
+            {
+                let note = steelseries_gg::pollrate::persist_poll_rate(device_type, poll_rate).await?;
+                println!("{note}");
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let mut config = Config::load_async().await?;
+                match device_type {
+                    DeviceType::Mouse => config.poll_rate.mouse_hz = Some(rate),
+                    DeviceType::Keyboard => config.poll_rate.keyboard_hz = Some(rate),
+                }
+                config.save_async().await?;
+                println!("Setting saved to config (will apply on daemon startup)");
+            }
+        }
+        Ok(())
+    }
+
     match action {
-        PollrateAction::Mouse { rate, persistent } => {
-            let poll_rate = PollRate::from_hz(rate)?;
-
-            // Warn about hardware requirements for high poll rates
-            if poll_rate.requires_hardware_support() {
-                println!("⚠ Warning: {} requires hardware support", poll_rate.description());
-                println!("  Your mouse may not support this rate or may ignore the setting.");
-                println!();
-            }
-
-            set_poll_rate(DeviceType::Mouse, poll_rate).await?;
-            println!("Mouse polling rate set to {} Hz", rate);
-
-            if persistent {
-                let mut config = Config::load_async().await?;
-                config.poll_rate.mouse_hz = Some(rate);
-                config.save_async().await?;
-                println!("Setting saved to config (will apply on daemon startup)");
-            }
-        }
-
-        PollrateAction::Keyboard { rate, persistent } => {
-            let poll_rate = PollRate::from_hz(rate)?;
-
-            // Warn about hardware requirements for high poll rates
-            if poll_rate.requires_hardware_support() {
-                println!("⚠ Warning: {} requires hardware support", poll_rate.description());
-                println!("  Your keyboard may not support this rate or may ignore the setting.");
-                println!();
-            }
-
-            set_poll_rate(DeviceType::Keyboard, poll_rate).await?;
-            println!("Keyboard polling rate set to {} Hz", rate);
-
-            if persistent {
-                let mut config = Config::load_async().await?;
-                config.poll_rate.keyboard_hz = Some(rate);
-                config.save_async().await?;
-                println!("Setting saved to config (will apply on daemon startup)");
-            }
-        }
-
+        PollrateAction::Mouse { rate, persistent } => set_one(DeviceType::Mouse, rate, persistent).await?,
+        PollrateAction::Keyboard { rate, persistent } => set_one(DeviceType::Keyboard, rate, persistent).await?,
         PollrateAction::Status => {
             fn print_pollrate_result(label: &str, result: steelseries_gg::error::Result<PollRate>) {
                 match result {
-                    Ok(rate) => println!("  {label}: {} Hz", rate.to_hz()),
+                    Ok(rate) => println!("  {label}: {rate}"),
                     Err(e) if e.to_string().contains("not supported by this device's HID driver") => {
                         println!("  {label}: unsupported on this driver — {e}");
                     }
@@ -1426,14 +1412,15 @@ async fn cmd_pollrate(action: PollrateAction) -> Result<()> {
                 }
             }
 
-            println!("Current USB Polling Rates:");
+            println!("Current USB Polling Rates (kernel override):");
             println!();
 
             print_pollrate_result("Mouse   ", get_poll_rate(DeviceType::Mouse).await);
             print_pollrate_result("Keyboard", get_poll_rate(DeviceType::Keyboard).await);
 
             println!();
-            println!("Note: Changes require root privileges (sudo)");
+            println!("Note: changes require root (sudo). Rates above 1000 Hz are a device setting:");
+            println!("      use `ssgg set <mouse> polling_rate <hz>` on supported mice.");
         }
     }
 
@@ -2828,6 +2815,16 @@ async fn cmd_verify_performance(
 
 async fn apply_saved_poll_rates(config: &Config) {
     use steelseries_gg::pollrate::{DeviceType, PollRate, set_poll_rate};
+
+    // On Linux the kernel parameter needs root; `ssgg pollrate --persistent` stores it in
+    // /etc/modprobe.d instead, so a user daemon has nothing to apply.
+    #[cfg(target_os = "linux")]
+    if !steelseries_gg::pollrate::is_root() {
+        if config.poll_rate.mouse_hz.is_some() || config.poll_rate.keyboard_hz.is_some() {
+            debug!("Skipping saved poll rates: not root (use `sudo ssgg pollrate ... --persistent`)");
+        }
+        return;
+    }
 
     if let Some(mouse_hz) = config.poll_rate.mouse_hz {
         match PollRate::from_hz(mouse_hz) {
