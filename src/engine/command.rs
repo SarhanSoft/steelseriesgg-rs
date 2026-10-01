@@ -86,6 +86,38 @@ pub enum Command {
         #[serde(default)]
         clear: bool,
     },
+    /// Audio mixer: change settings (`patch`), turn it on/off, and return its state.
+    Mixer {
+        #[serde(default)]
+        patch: Option<super::audio::MixerPatch>,
+        #[serde(default)]
+        enabled: Option<bool>,
+    },
+    /// Key bindings of a profile (`None` = the active one).
+    Bindings {
+        #[serde(default)]
+        profile: Option<String>,
+    },
+    /// Add or replace one binding in a profile (`None` = the active one, created if needed).
+    Bind {
+        #[serde(default)]
+        profile: Option<String>,
+        binding: crate::input::Binding,
+    },
+    /// Remove the binding of one key.
+    Unbind {
+        #[serde(default)]
+        profile: Option<String>,
+        source: crate::input::InputKey,
+    },
+    /// Record key presses on SteelSeries devices until `stop_key` (default Escape) or the
+    /// timeout, and return them as macro steps.
+    MacroRecord {
+        #[serde(default)]
+        stop_key: Option<crate::input::InputKey>,
+        #[serde(default)]
+        timeout_secs: Option<u32>,
+    },
     /// Save the instant-replay buffer to a clip.
     MomentsSave,
     /// Replay buffer state.
@@ -102,7 +134,12 @@ impl Command {
     pub fn is_read_only(&self) -> bool {
         matches!(
             self,
-            Command::Ping | Command::Status | Command::Settings { .. } | Command::ProfileList | Command::MomentsStatus
+            Command::Ping
+                | Command::Status
+                | Command::Settings { .. }
+                | Command::ProfileList
+                | Command::MomentsStatus
+                | Command::Bindings { .. }
         )
     }
 }

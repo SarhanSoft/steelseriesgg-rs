@@ -6,6 +6,8 @@
 //! the devices, a colour set from the CLI is no longer overwritten by the daemon's next frame,
 //! and a device plugged in later gets its settings and lighting back.
 
+pub mod audio;
+pub mod bindings;
 pub mod command;
 pub mod control;
 pub mod gamesense;
@@ -54,6 +56,8 @@ const AUTOSWITCH_INTERVAL: Duration = Duration::from_secs(2);
 const OLED_INTERVAL: Duration = Duration::from_millis(100);
 /// How long a temporary OLED screen stays when no duration is given.
 const OLED_DEFAULT_SECONDS: u32 = 5;
+/// Tick for input-engine notices and the headset ChatMix dial (dial read every other tick).
+const INPUT_INTERVAL: Duration = Duration::from_millis(250);
 
 /// An opened device of any family.
 pub enum DeviceHandle {
@@ -235,6 +239,9 @@ struct Inner {
     screens: ScreenManager,
     /// GameSense game that owns the temporary OLED content, if any.
     screen_source: Option<String>,
+    audio: audio::AudioState,
+    input: bindings::InputState,
+    daemon: bool,
 }
 
 /// Handles for the daemon's background loops; dropping it does not stop them, call
@@ -287,6 +294,9 @@ impl Engine {
                 state,
                 screens,
                 screen_source: None,
+                audio: audio::AudioState::load(),
+                input: bindings::InputState::default(),
+                daemon,
                 state_dirty: false,
                 profiles,
                 overlays: Vec::new(),
@@ -299,7 +309,44 @@ impl Engine {
             started: Instant::now(),
         });
         engine.refresh_devices().await?;
+        engine.start_services().await;
         Ok(engine)
+    }
+
+    /// Bring up what the remembered state asks for: the mixer and the active profile's key
+    /// bindings (daemon only).
+    async fn start_services(&self) {
+        let mut inner = self.inner.lock().await;
+        if !inner.daemon {
+            return;
+        }
+        if inner.state.mixer_enabled
+            && let Err(e) = inner.audio.start()
+        {
+            warn!("Audio mixer not started: {e}");
+        }
+        let bindings = inner
+            .state
+            .active_profile
+            .clone()
+            .and_then(|name| inner.profiles.as_ref().and_then(|p| p.get(&name)).cloned())
+            .map(|profile| bindings::bindings_from_profile(profile.bindings.as_ref()))
+            .transpose();
+        match bindings {
+            Ok(Some(set)) => inner.input.apply(set, true),
+            Ok(None) => {}
+            Err(e) => warn!("Active profile's key bindings ignored: {e}"),
+        }
+    }
+
+    /// Stop everything that changes the system (mixer defaults, grabbed input, recorder) and
+    /// save state. Called by the daemon on exit.
+    pub async fn shutdown(&self) {
+        let mut inner = self.inner.lock().await;
+        inner.audio.stop();
+        inner.input.stop();
+        inner.moments.stop();
+        inner.save_state();
     }
 
     pub fn is_daemon(&self) -> bool {
@@ -319,6 +366,9 @@ impl Engine {
 
     /// Execute one command and return its JSON result.
     pub async fn execute(&self, command: Command) -> Result<Value> {
+        if let Command::MacroRecord { stop_key, timeout_secs } = command {
+            return self.record_macro(stop_key, timeout_secs).await;
+        }
         let mut inner = self.inner.lock().await;
         let result = inner.execute(command, self.daemon).await;
         if !self.daemon && inner.state_dirty {
@@ -419,6 +469,18 @@ impl Engine {
 
         let engine = Arc::clone(self);
         handles.push(tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(INPUT_INTERVAL);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut tick: u64 = 0;
+            loop {
+                ticker.tick().await;
+                tick += 1;
+                engine.input_tick(tick.is_multiple_of(2)).await;
+            }
+        }));
+
+        let engine = Arc::clone(self);
+        handles.push(tokio::spawn(async move {
             let mut ticker = tokio::time::interval(OLED_INTERVAL);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
@@ -466,6 +528,61 @@ impl Engine {
         }));
 
         BackgroundTasks { handles }
+    }
+
+    /// Record a macro from SteelSeries devices. Live bindings are paused meanwhile, because a
+    /// device grabbed by the input engine delivers nothing to the recorder.
+    async fn record_macro(&self, stop_key: Option<crate::input::InputKey>, timeout_secs: Option<u32>) -> Result<Value> {
+        let stop_key = match stop_key {
+            Some(key) => key,
+            None => crate::input::InputKey::parse("KEY_ESC")?,
+        };
+        let timeout = Duration::from_secs(u64::from(timeout_secs.unwrap_or(30).clamp(1, 300)));
+        let (resume, daemon) = {
+            let mut inner = self.inner.lock().await;
+            let resume = inner.input.active().clone();
+            inner.input.stop();
+            (resume, inner.daemon)
+        };
+        let filter = crate::input::DeviceFilter::steelseries();
+        let recorded =
+            tokio::task::spawn_blocking(move || crate::input::InputEngine::record_macro(&filter, stop_key, timeout))
+                .await
+                .map_err(|e| Error::Other(format!("macro recorder task failed: {e}")))?;
+        self.inner.lock().await.input.apply(resume, daemon);
+        Ok(json!({ "steps": recorded? }))
+    }
+
+    /// One input/ChatMix step (daemon loop): profile switches requested by bindings, and the
+    /// headset dial driving the mixer.
+    async fn input_tick(&self, read_dial: bool) {
+        let switches = {
+            let mut inner = self.inner.lock().await;
+            if read_dial && inner.audio.is_running() {
+                let mut dial = None;
+                for slot in inner.slots.values_mut() {
+                    if !matches!(slot.handle, DeviceHandle::Headset(_)) || slot.status.chatmix.is_none() {
+                        continue;
+                    }
+                    if let Some(configurable) = slot.handle.configurable()
+                        && let Ok(status) = configurable.read_status()
+                    {
+                        dial = status.chatmix.or(dial);
+                        slot.status = status;
+                    }
+                }
+                if let Some(chatmix) = dial {
+                    inner.audio.follow_dial(chatmix);
+                }
+            }
+            inner.input.poll()
+        };
+        for name in switches {
+            match self.execute(Command::ProfileLoad { name: name.clone() }).await {
+                Ok(_) => notify::send("Profile switched", &name, Urgency::Low),
+                Err(e) => warn!("Binding asked for profile {name}: {e}"),
+            }
+        }
     }
 
     /// One automatic-profile-switching step (daemon loop).
@@ -889,6 +1006,62 @@ impl Inner {
                 }
                 Ok(json!({ "idle": self.state.oled_idle }))
             }
+            Command::Mixer { patch, enabled } => {
+                if let Some(enabled) = enabled {
+                    self.state.mixer_enabled = enabled;
+                    self.state_dirty = true;
+                    if daemon {
+                        if enabled {
+                            self.audio.start()?;
+                        } else {
+                            self.audio.stop();
+                        }
+                    }
+                }
+                if let Some(patch) = patch {
+                    self.audio.update(&patch)?;
+                }
+                let enabled = self.state.mixer_enabled;
+                Ok(serde_json::to_value(self.audio.view(enabled))?)
+            }
+            Command::Bindings { profile } => {
+                let name = match profile {
+                    Some(name) => Some(name),
+                    None => self.state.active_profile.clone(),
+                };
+                let set = match &name {
+                    Some(name) => {
+                        let profile = self
+                            .profiles
+                            .as_ref()
+                            .and_then(|p| p.get(name))
+                            .ok_or_else(|| Error::Profile(format!("profile '{name}' not found")))?;
+                        bindings::bindings_from_profile(profile.bindings.as_ref())?
+                    }
+                    None => crate::input::BindingSet::default(),
+                };
+                Ok(json!({
+                    "profile": name,
+                    "bindings": set,
+                    "running": self.input.is_running(),
+                    "error": self.input.last_error(),
+                }))
+            }
+            Command::Bind { profile, binding } => {
+                let name = self.bindings_profile(profile)?;
+                self.edit_bindings(&name, |set| {
+                    set.insert(binding);
+                })?;
+                Ok(json!({ "profile": name }))
+            }
+            Command::Unbind { profile, source } => {
+                let name = self.bindings_profile(profile)?;
+                self.edit_bindings(&name, |set| {
+                    set.remove(source);
+                })?;
+                Ok(json!({ "profile": name }))
+            }
+            Command::MacroRecord { .. } => Err(Error::Other("macro recording is handled by the engine".to_string())),
             Command::MomentsSave => {
                 let dir = self.moments.save_clip()?;
                 notify::send("Clip saved", &dir.to_string_lossy(), Urgency::Low);
@@ -1226,6 +1399,45 @@ impl Inner {
         list
     }
 
+    /// Profile whose bindings a `bind`/`unbind` edits: the named one, else the active one, else
+    /// a new "Default" profile that becomes active.
+    fn bindings_profile(&mut self, profile: Option<String>) -> Result<String> {
+        if let Some(name) = profile.or_else(|| self.state.active_profile.clone()) {
+            return Ok(name);
+        }
+        let name = "Default".to_string();
+        let profiles = self.profiles_mut()?;
+        if profiles.get(&name).is_none() {
+            profiles.set(Profile::new(name.clone()))?;
+        }
+        self.state.active_profile = Some(name.clone());
+        self.state_dirty = true;
+        Ok(name)
+    }
+
+    fn edit_bindings(&mut self, name: &str, edit: impl FnOnce(&mut crate::input::BindingSet)) -> Result<()> {
+        let daemon = self.daemon;
+        let active = self.state.active_profile.as_deref() == Some(name);
+        let profiles = self.profiles_mut()?;
+        let mut profile = profiles
+            .get(name)
+            .cloned()
+            .ok_or_else(|| Error::Profile(format!("profile '{name}' not found")))?;
+        let mut set = bindings::bindings_from_profile(profile.bindings.as_ref())?;
+        edit(&mut set);
+        set.validate()?;
+        profile.bindings = if set.bindings.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_value(&set)?)
+        };
+        profiles.set(profile)?;
+        if active {
+            self.input.apply(set, daemon);
+        }
+        Ok(())
+    }
+
     fn save_profile(&mut self, name: &str, description: Option<String>) -> Result<()> {
         let mut devices = BTreeMap::new();
         for (key, slot) in &self.slots {
@@ -1254,12 +1466,28 @@ impl Inner {
             );
         }
         let lighting = self.state.lighting.clone();
+        let mixer = if self.state.mixer_enabled {
+            Some(serde_json::to_value(&self.audio.config)?)
+        } else {
+            None
+        };
+        let bindings = if self.input.active().bindings.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_value(self.input.active())?)
+        };
         let profiles = self.profiles_mut()?;
         let mut profile = profiles.get(name).cloned().unwrap_or_else(|| Profile::new(name));
         if description.is_some() {
             profile.description = description;
         }
         profile.lighting = Some(lighting);
+        if mixer.is_some() {
+            profile.mixer = mixer;
+        }
+        if profile.bindings.is_none() {
+            profile.bindings = bindings;
+        }
         // Keep entries for models that are not plugged in right now.
         for (model, device_profile) in devices {
             profile.devices.insert(model, device_profile);
@@ -1300,6 +1528,28 @@ impl Inner {
                 if let Err(e) = self.apply_setting(&key, id, value.clone()) {
                     errors.push(format!("{device_name}: {id}: {e}"));
                 }
+            }
+        }
+
+        match bindings::bindings_from_profile(profile.bindings.as_ref()) {
+            Ok(set) => {
+                let daemon = self.daemon;
+                self.input.apply(set, daemon);
+            }
+            Err(e) => errors.push(e.to_string()),
+        }
+        if let Some(mixer) = &profile.mixer {
+            match serde_json::from_value::<crate::mixer::MixerConfig>(mixer.clone()) {
+                Ok(config) => {
+                    if let Some(running) = self.audio.mixer.as_mut()
+                        && running.is_running()
+                        && let Err(e) = running.apply(&config)
+                    {
+                        errors.push(format!("mixer: {e}"));
+                    }
+                    self.audio.config = config;
+                }
+                Err(e) => errors.push(format!("mixer settings: {e}")),
             }
         }
 

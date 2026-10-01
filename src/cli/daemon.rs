@@ -65,7 +65,7 @@ pub async fn run() -> Result<()> {
     if let Some(control) = control {
         control.stop();
     }
-    engine.save().await;
+    engine.shutdown().await;
     info!("Daemon stopped.");
     Ok(())
 }

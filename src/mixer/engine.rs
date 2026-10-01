@@ -84,7 +84,7 @@ impl Default for MixerTiming {
 }
 
 /// A physical output or input device.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AudioDevice {
     pub name: String,
     pub description: String,
@@ -92,7 +92,7 @@ pub struct AudioDevice {
 }
 
 /// An application playback stream.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AppStream {
     /// Pulse sink-input index.
     pub index: u32,
@@ -107,11 +107,11 @@ pub struct AppStream {
     pub rule_channel: Channel,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ChannelStatus {
     pub channel: Channel,
-    pub node_name: &'static str,
-    pub description: &'static str,
+    pub node_name: String,
+    pub description: String,
     /// The user's volume, percent.
     pub volume: u8,
     /// Volume set on the node (ChatMix applied), percent.
@@ -123,10 +123,10 @@ pub struct ChannelStatus {
     pub present: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MicStatus {
     pub enabled: bool,
-    pub node_name: &'static str,
+    pub node_name: String,
     pub present: bool,
     pub input_device: Option<String>,
     pub volume: u8,
@@ -135,16 +135,16 @@ pub struct MicStatus {
     pub noise_suppression: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct StreamerStatus {
     pub enabled: bool,
-    pub node_name: &'static str,
+    pub node_name: String,
     pub present: bool,
     pub mix: StreamMix,
 }
 
 /// Snapshot returned by [`Mixer::status`].
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MixerStatus {
     pub running: bool,
     pub output_device: Option<String>,
@@ -606,8 +606,8 @@ impl Mixer {
                 let eq = config.eq(channel);
                 ChannelStatus {
                     channel,
-                    node_name: channel.node_name(),
-                    description: channel.description(),
+                    node_name: channel.node_name().to_string(),
+                    description: channel.description().to_string(),
                     volume: level.volume,
                     effective_volume: config.effective_volume(channel),
                     muted: level.muted,
@@ -620,7 +620,7 @@ impl Mixer {
         let mic_plan = plan.and_then(|p| p.mic.as_ref());
         let mic = MicStatus {
             enabled: config.mic.enabled,
-            node_name: nodes::MIC,
+            node_name: nodes::MIC.to_string(),
             present: has_source(nodes::MIC),
             input_device: mic_plan.map(|m| m.input_source.clone()),
             volume: config.mic.level.volume,
@@ -639,7 +639,7 @@ impl Mixer {
             mic,
             streamer: StreamerStatus {
                 enabled: config.streamer.enabled,
-                node_name: nodes::STREAM,
+                node_name: nodes::STREAM.to_string(),
                 present: has_sink(nodes::STREAM),
                 mix: config.streamer.mix,
             },

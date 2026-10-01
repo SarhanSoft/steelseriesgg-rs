@@ -62,6 +62,9 @@ pub struct EngineState {
     /// What OLED keyboards show when nothing temporary is on.
     #[serde(default)]
     pub oled_idle: super::screen::IdleScreen,
+    /// Run the Sonar-style audio mixer inside the daemon.
+    #[serde(default)]
+    pub mixer_enabled: bool,
 }
 
 impl Default for EngineState {
@@ -72,6 +75,7 @@ impl Default for EngineState {
             lighting: Lighting::default(),
             active_profile: None,
             oled_idle: super::screen::IdleScreen::default(),
+            mixer_enabled: false,
         }
     }
 }

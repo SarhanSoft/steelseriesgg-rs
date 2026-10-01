@@ -118,7 +118,12 @@ mod tests {
     #[test]
     fn missing_or_null_bindings_are_empty() {
         assert!(bindings_from_profile(None).unwrap().bindings.is_empty());
-        assert!(bindings_from_profile(Some(&serde_json::Value::Null)).unwrap().bindings.is_empty());
+        assert!(
+            bindings_from_profile(Some(&serde_json::Value::Null))
+                .unwrap()
+                .bindings
+                .is_empty()
+        );
     }
 
     #[test]

@@ -102,7 +102,10 @@ impl MixerPatch {
             config.routing.rules.insert(0, rule.clone());
         }
         if let Some(pattern) = &self.unroute {
-            config.routing.rules.retain(|r| !r.pattern.eq_ignore_ascii_case(pattern));
+            config
+                .routing
+                .rules
+                .retain(|r| !r.pattern.eq_ignore_ascii_case(pattern));
         }
         if let Some(enabled) = self.streamer {
             config.streamer.enabled = enabled;
@@ -293,7 +296,13 @@ mod tests {
         }
         .apply_to(&mut config)
         .unwrap();
-        assert!(config.eq(Channel::Game).bands.iter().all(|b| (b.gain - 1.0).abs() < 1e-6));
+        assert!(
+            config
+                .eq(Channel::Game)
+                .bands
+                .iter()
+                .all(|b| (b.gain - 1.0).abs() < 1e-6)
+        );
         assert!(config.eq(Channel::Game).preset.is_none());
 
         let wrong = MixerPatch {
