@@ -1,19 +1,15 @@
 //! `ssgg daemon`: the long-running service (systemd user unit `ssgg.service`).
 
-use std::time::{Duration, Instant};
+use std::sync::Arc;
 
-use tracing::{info, warn};
+use tokio::sync::{broadcast, watch};
+use tracing::{debug, info, warn};
 
 use steelseries_gg::Result;
 use steelseries_gg::config::Config;
-use steelseries_gg::devices::DeviceType;
 use steelseries_gg::engine::control::ControlServer;
-use steelseries_gg::engine::{Command, Engine, Overlay, OverlayTarget};
+use steelseries_gg::engine::{Command, Engine};
 use steelseries_gg::gamesense::GameSenseServer;
-use steelseries_gg::rgb::Color;
-
-/// How long a GameSense colour stays without a new event (the SDK's heartbeat window).
-const GAMESENSE_HOLD: Duration = Duration::from_secs(15);
 
 pub async fn run() -> Result<()> {
     info!("Starting SteelSeries GG daemon {}", env!("CARGO_PKG_VERSION"));
@@ -46,13 +42,25 @@ pub async fn run() -> Result<()> {
         warn!("Default profile '{name}' not applied: {e}");
     }
 
-    if config.gamesense.enabled {
-        start_gamesense(&config, engine.clone());
-    }
+    let (stop_tx, stop_rx) = watch::channel(false);
+    let gamesense = if config.gamesense.enabled {
+        Some(tokio::spawn(run_gamesense(config.clone(), engine.clone(), stop_rx)))
+    } else {
+        None
+    };
 
     info!("Daemon running. Stop with Ctrl+C or `systemctl --user stop ssgg`.");
     crate::wait_for_shutdown().await?;
 
+    // Let GameSense remove its coreProps.json files before exiting.
+    let _ = stop_tx.send(true);
+    if let Some(task) = gamesense
+        && tokio::time::timeout(std::time::Duration::from_secs(3), task)
+            .await
+            .is_err()
+    {
+        warn!("GameSense server did not stop in time");
+    }
     tasks.abort();
     if let Some(control) = control {
         control.stop();
@@ -62,37 +70,47 @@ pub async fn run() -> Result<()> {
     Ok(())
 }
 
-fn start_gamesense(config: &Config, engine: std::sync::Arc<Engine>) {
+async fn run_gamesense(config: Config, engine: Arc<Engine>, mut stop: watch::Receiver<bool>) {
     let bind = config.gamesense.bind_address.clone();
     let port = config.gamesense.port;
-    tokio::spawn(async move {
-        let server = match GameSenseServer::new(&bind, port) {
-            Ok(server) => server,
-            Err(e) => {
-                warn!("GameSense server not started: {e}");
-                return;
+    let server = match GameSenseServer::new(&bind, port) {
+        Ok(server) => server,
+        Err(e) => {
+            warn!("GameSense server not started: {e}");
+            return;
+        }
+    };
+
+    let mut outputs = server.subscribe();
+    let bridge = tokio::spawn(async move {
+        loop {
+            match outputs.recv().await {
+                Ok(output) => engine.apply_gamesense(output).await,
+                Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                    debug!("GameSense bridge skipped {skipped} outputs")
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
             }
-        };
-        let handle = tokio::runtime::Handle::current();
-        server
-            .set_rgb_callback(move |zone: &str, r: u8, g: u8, b: u8| {
-                let engine = engine.clone();
-                let zone_index = crate::parse_zone_number(zone);
-                handle.spawn(async move {
-                    engine
-                        .push_overlay(Overlay {
-                            target: OverlayTarget::Kind(DeviceType::Keyboard),
-                            zone: zone_index,
-                            color: Color::new(r, g, b),
-                            expires: Instant::now() + GAMESENSE_HOLD,
-                            flash_hz: None,
-                        })
-                        .await;
-                });
-            })
-            .await;
-        if let Err(e) = server.run().await {
-            warn!("GameSense server stopped: {e}");
         }
     });
+
+    let listener = match tokio::net::TcpListener::bind((bind.as_str(), port)).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            warn!("GameSense could not listen on {bind}:{port}: {e}");
+            bridge.abort();
+            return;
+        }
+    };
+    let shutdown = async move {
+        while !*stop.borrow() {
+            if stop.changed().await.is_err() {
+                break;
+            }
+        }
+    };
+    if let Err(e) = server.serve(listener, shutdown).await {
+        warn!("GameSense server stopped: {e}");
+    }
+    bridge.abort();
 }

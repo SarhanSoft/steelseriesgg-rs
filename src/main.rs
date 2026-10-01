@@ -650,29 +650,6 @@ fn parse_sonar_channel<'a>(channel: &'a str, valid_channels: &[&str]) -> Result<
     }
 }
 
-/// Parse a zone identifier (e.g., "zone1", "2", "all") into a zone index (0-based).
-/// Returns None for "all"/"keyboard" which should apply to all zones.
-#[inline]
-fn parse_zone_number(zone: &str) -> Option<usize> {
-    // Fast path: check common cases without string allocation
-    if zone.eq_ignore_ascii_case("all") || zone.eq_ignore_ascii_case("keyboard") {
-        return None;
-    }
-
-    // Try parsing as "zone<number>" or just "<number>"
-    // Use case-insensitive prefix check to avoid allocation
-    let number_part = if zone.len() > 4 && zone[0..4].eq_ignore_ascii_case("zone") {
-        &zone[4..]
-    } else {
-        zone
-    };
-
-    number_part.parse::<usize>().ok().and_then(|one_based| {
-        // Convert 1-based to 0-based index
-        if one_based > 0 { Some(one_based - 1) } else { None }
-    })
-}
-
 /// Generate a comprehensive bug report with diagnostic information.
 async fn cmd_bug_report(output: &str, include_hid_logs: bool, include_performance: bool) -> Result<()> {
     use steelseries_gg::diagnostics_export::{collect_bug_report, export_bug_report};

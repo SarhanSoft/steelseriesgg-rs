@@ -8,6 +8,7 @@
 
 pub mod command;
 pub mod control;
+pub mod gamesense;
 pub mod screen;
 pub mod state;
 
@@ -115,18 +116,50 @@ impl DeviceHandle {
 pub struct Overlay {
     /// Which devices: a specific device key, or every device of a type.
     pub target: OverlayTarget,
-    /// Zone index, or `None` for every zone.
-    pub zone: Option<usize>,
+    /// Which LEDs on those devices.
+    pub zone: OverlayZone,
     pub color: Color,
     pub expires: Instant,
     /// Flash on/off at this frequency instead of a steady colour.
     pub flash_hz: Option<f32>,
+    /// Who pushed it (a GameSense game name), so it can be cleared with its owner.
+    pub source: Option<String>,
+}
+
+impl Overlay {
+    fn applies_to(&self, key: &str, kind: DeviceType) -> bool {
+        match &self.target {
+            OverlayTarget::Device(k) => k == key,
+            OverlayTarget::Kind(t) => *t == kind,
+        }
+    }
+
+    fn color_at(&self, now: Instant, epoch: Instant) -> Color {
+        let lit = self.flash_hz.is_none_or(|hz| {
+            let t = now.duration_since(epoch).as_secs_f32();
+            ((t * hz * 2.0) as u64).is_multiple_of(2)
+        });
+        if lit { self.color } else { Color::BLACK }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum OverlayTarget {
     Device(String),
     Kind(DeviceType),
+}
+
+/// LEDs an overlay covers.
+#[derive(Clone, Debug, PartialEq)]
+pub enum OverlayZone {
+    All,
+    /// Zone by index (0-based).
+    Index(usize),
+    /// Zone by name (`logo`, `wheel`, ...), matched against the device's zone names; every
+    /// zone when no name matches.
+    Named(String),
+    /// Individual keys on per-key keyboards.
+    Keys(Vec<KeyId>),
 }
 
 struct Slot {
@@ -142,6 +175,10 @@ struct Slot {
     write_failures: u32,
     oled_size: Option<(u32, u32)>,
     last_oled: Option<OledFrame>,
+    /// LED zone names (mice), for GameSense named zones.
+    zone_names: Vec<String>,
+    /// Whether the last lighting frame went out per key (vs. per zone).
+    last_per_key: bool,
 }
 
 impl Slot {
@@ -196,6 +233,8 @@ struct Inner {
     config: Config,
     moments: MomentsRecorder,
     screens: ScreenManager,
+    /// GameSense game that owns the temporary OLED content, if any.
+    screen_source: Option<String>,
 }
 
 /// Handles for the daemon's background loops; dropping it does not stop them, call
@@ -247,6 +286,7 @@ impl Engine {
                 slots: BTreeMap::new(),
                 state,
                 screens,
+                screen_source: None,
                 state_dirty: false,
                 profiles,
                 overlays: Vec::new(),
@@ -289,16 +329,46 @@ impl Engine {
 
     /// Push a temporary lighting overlay (GameSense, notifications).
     pub async fn push_overlay(&self, overlay: Overlay) {
-        let mut inner = self.inner.lock().await;
-        inner
-            .overlays
-            .retain(|o| !(o.target == overlay.target && o.zone == overlay.zone));
-        inner.overlays.push(overlay);
+        self.inner.lock().await.push_overlay(overlay);
     }
 
     /// Drop every overlay (e.g. a game stopped).
     pub async fn clear_overlays(&self) {
         self.inner.lock().await.overlays.clear();
+    }
+
+    /// Apply one GameSense output: lighting overlays, per-key colours, OLED screens.
+    pub async fn apply_gamesense(&self, output: crate::gamesense::GameSenseOutput) {
+        let action = gamesense::translate(output, Instant::now());
+        let mut inner = self.inner.lock().await;
+        match action {
+            gamesense::Action::Overlays(overlays) => {
+                for overlay in overlays {
+                    inner.push_overlay(overlay);
+                }
+            }
+            gamesense::Action::Screen {
+                game,
+                content,
+                duration,
+            } => {
+                if !inner.slots.values().any(|s| s.oled_size.is_some()) {
+                    return;
+                }
+                match inner.screens.show(&content, duration) {
+                    Ok(()) => inner.screen_source = Some(game),
+                    Err(e) => debug!("GameSense screen from {game} not shown: {e}"),
+                }
+            }
+            gamesense::Action::Clear { game } => {
+                inner.overlays.retain(|o| o.source.as_deref() != Some(game.as_str()));
+                if inner.screen_source.as_deref() == Some(game.as_str()) {
+                    inner.screens.clear_temporary();
+                    inner.screen_source = None;
+                }
+            }
+            gamesense::Action::Ignore => {}
+        }
     }
 
     /// Write the first lighting frame to every device right away. One-shot CLI engines call
@@ -542,9 +612,15 @@ impl Inner {
                         DeviceHandle::Keyboard(keyboard) => keyboard.oled_size(),
                         _ => None,
                     };
+                    let zone_names = match &handle {
+                        DeviceHandle::Mouse(mouse) => mouse.color_zone_names(),
+                        _ => Vec::new(),
+                    };
                     let mut slot = Slot {
                         oled_size,
                         last_oled: None,
+                        zone_names,
+                        last_per_key: false,
                         model_key: model_key(&info),
                         info,
                         handle,
@@ -621,6 +697,13 @@ impl Inner {
                 warn!("Could not restore {id} on {}: {e}", slot.info.name);
             }
         }
+    }
+
+    fn push_overlay(&mut self, overlay: Overlay) {
+        // A newer colour for the same LEDs replaces the older one.
+        self.overlays
+            .retain(|o| !(o.target == overlay.target && o.zone == overlay.zone && o.source == overlay.source));
+        self.overlays.push(overlay);
     }
 
     fn resolve(&self, selector: &str) -> Result<String> {
@@ -929,39 +1012,78 @@ impl Inner {
         let overlays = self.overlays.clone();
         let epoch = self.epoch;
         for (key, slot) in self.slots.iter_mut() {
-            if !slot.key_colors.is_empty() {
-                continue;
-            }
             let Some(controller) = slot.lighting.as_mut() else {
                 continue;
             };
             let mut colors = controller.compute_colors().to_vec();
             let kind = slot.handle.kind();
-            for overlay in &overlays {
-                let applies = match &overlay.target {
-                    OverlayTarget::Device(k) => k == key,
-                    OverlayTarget::Kind(t) => *t == kind,
+            let mut key_layer: Vec<(KeyId, Color)> = slot.key_colors.clone();
+            for overlay in overlays.iter().filter(|o| o.applies_to(key, kind)) {
+                let color = overlay.color_at(now, epoch);
+                match &overlay.zone {
+                    OverlayZone::All => {
+                        colors.iter_mut().for_each(|c| *c = color);
+                        key_layer.clear();
+                    }
+                    OverlayZone::Index(zone) => {
+                        if let Some(c) = colors.get_mut(*zone) {
+                            *c = color;
+                        }
+                    }
+                    OverlayZone::Named(name) => {
+                        let needle = name.to_ascii_lowercase();
+                        match slot
+                            .zone_names
+                            .iter()
+                            .position(|z| z.to_ascii_lowercase().contains(&needle))
+                        {
+                            Some(zone) if zone < colors.len() => colors[zone] = color,
+                            _ => colors.iter_mut().for_each(|c| *c = color),
+                        }
+                    }
+                    OverlayZone::Keys(keys) => {
+                        for key_id in keys {
+                            match key_layer.iter_mut().find(|(k, _)| k == key_id) {
+                                Some(entry) => entry.1 = color,
+                                None => key_layer.push((*key_id, color)),
+                            }
+                        }
+                    }
+                }
+            }
+
+            let per_key = !key_layer.is_empty() && slot.handle.supports_per_key();
+            let result = if per_key {
+                let DeviceHandle::Keyboard(keyboard) = &mut slot.handle else {
+                    continue;
                 };
-                if !applies {
+                // Every mapped key gets the effect colour, then the per-key layer on top.
+                let base = colors.first().copied().unwrap_or(Color::BLACK);
+                let mut frame: Vec<(KeyId, Color)> = keyboard
+                    .get_key_mapping()
+                    .map(|m| m.get_all_keys().iter().map(|k| (*k, base)).collect())
+                    .unwrap_or_default();
+                for (key_id, color) in &key_layer {
+                    match frame.iter_mut().find(|(k, _)| k == key_id) {
+                        Some(entry) => entry.1 = *color,
+                        None => frame.push((*key_id, *color)),
+                    }
+                }
+                let signature: Vec<Color> = frame.iter().map(|(_, c)| *c).collect();
+                if slot.last_per_key && signature == slot.last_frame {
                     continue;
                 }
-                let lit = overlay.flash_hz.is_none_or(|hz| {
-                    let t = now.duration_since(epoch).as_secs_f32();
-                    ((t * hz * 2.0) as u64).is_multiple_of(2)
-                });
-                let color = if lit { overlay.color } else { Color::BLACK };
-                match overlay.zone {
-                    Some(zone) if zone < colors.len() => colors[zone] = color,
-                    Some(_) => {}
-                    None => colors.iter_mut().for_each(|c| *c = color),
+                keyboard.set_key_colors(&frame).await.map(|()| (signature, true))
+            } else {
+                if !slot.last_per_key && colors == slot.last_frame {
+                    continue;
                 }
-            }
-            if colors == slot.last_frame {
-                continue;
-            }
-            match slot.handle.write_zones(&colors).await {
-                Ok(()) => {
-                    slot.last_frame = colors;
+                slot.handle.write_zones(&colors).await.map(|()| (colors, false))
+            };
+            match result {
+                Ok((sent, was_per_key)) => {
+                    slot.last_frame = sent;
+                    slot.last_per_key = was_per_key;
                     slot.write_failures = 0;
                 }
                 Err(e) => {
