@@ -83,6 +83,10 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 hidapi = { version = "=2.6.7", default-features = false, features = ["linux-native-basic-udev"] }
+# Key bindings and macros (src/input): read and grab evdev devices, re-emit through uinput,
+# and poll(2) the device fds
+evdev = "0.13.2"
+rustix = { version = "1.1.4", features = ["event"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 hidapi = { version = "=2.6.7" }
