@@ -22,6 +22,8 @@ pub enum Action {
         game: String,
         content: ScreenContent,
         duration: Option<Duration>,
+        /// Screen size the content was made for; `None` = any.
+        size: Option<(u32, u32)>,
     },
     Clear {
         game: String,
@@ -59,12 +61,12 @@ pub fn translate(output: GameSenseOutput, now: Instant) -> Action {
     match output {
         GameSenseOutput::Lighting {
             game,
+            event,
             device_type,
             target,
             color,
             flash,
             duration,
-            ..
         } => {
             let Some(kind) = device_kind(&device_type) else {
                 return Action::Ignore;
@@ -76,10 +78,28 @@ pub fn translate(output: GameSenseOutput, now: Instant) -> Action {
                 expires: now + duration.unwrap_or(HOLD),
                 flash_hz: flash.map(|f| f.frequency_hz).filter(|hz| *hz > 0.0),
                 source: Some(game),
+                event: Some(event),
             }])
         }
-        GameSenseOutput::Bitmap { game, colors, .. } => {
-            let keys = bitmap_key_colors(&colors);
+        GameSenseOutput::Bitmap {
+            game,
+            event,
+            colors,
+            excluded,
+            ..
+        } => {
+            // Keys the game reserved for other events keep their own colour.
+            let excluded: Vec<KeyId> = excluded
+                .iter()
+                .flat_map(|target| match zone_for(target) {
+                    OverlayZone::Keys(keys) => keys,
+                    _ => Vec::new(),
+                })
+                .collect();
+            let keys: Vec<(KeyId, Color)> = bitmap_key_colors(&colors)
+                .into_iter()
+                .filter(|(key, _)| !excluded.contains(key))
+                .collect();
             if keys.is_empty() {
                 return Action::Ignore;
             }
@@ -101,6 +121,7 @@ pub fn translate(output: GameSenseOutput, now: Instant) -> Action {
                         expires: now + HOLD,
                         flash_hz: None,
                         source: Some(game.clone()),
+                        event: Some(event.clone()),
                     })
                     .collect(),
             )
@@ -109,24 +130,25 @@ pub fn translate(output: GameSenseOutput, now: Instant) -> Action {
             game,
             content,
             duration,
+            size,
             ..
         } => Action::Screen {
             game,
-            content: screen_content(content),
+            content: screen_content(content, size.map(|s| (u32::from(s.width), u32::from(s.height)))),
             duration,
+            size: size.map(|s| (u32::from(s.width), u32::from(s.height))),
         },
         GameSenseOutput::Clear { game } => Action::Clear { game },
         GameSenseOutput::Tactile { .. } => Action::Ignore,
     }
 }
 
-fn screen_content(content: gamesense::ScreenContent) -> ScreenContent {
+fn screen_content(content: gamesense::ScreenContent, size: Option<(u32, u32)>) -> ScreenContent {
     match content {
-        gamesense::ScreenContent::Bitmap(data) => ScreenContent::Bitmap {
-            width: 128,
-            height: (data.len() as u32 * 8) / 128,
-            data,
-        },
+        gamesense::ScreenContent::Bitmap(data) => {
+            let (width, height) = size.unwrap_or((128, (data.len() as u32 * 8) / 128));
+            ScreenContent::Bitmap { width, height, data }
+        }
         gamesense::ScreenContent::Lines { lines, .. } => {
             let mut text = Vec::new();
             let mut progress = None;
@@ -324,7 +346,7 @@ mod tests {
             ],
             icon_id: None,
         };
-        match screen_content(content) {
+        match screen_content(content, None) {
             ScreenContent::Progress { label, percent } => {
                 assert_eq!(label, "HP");
                 assert!((percent - 40.0).abs() < f32::EPSILON);

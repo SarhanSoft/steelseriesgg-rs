@@ -65,7 +65,7 @@ parking_lot = "0.12.5"
 
 # HTTP client for Sonar API (optional, only needed for sonar feature)
 reqwest = { version = "0.13.4", features = ["json"], optional = true }
-rustix = { version = "1.1.4", features = ["process"] }
+rustix = { version = "1.1.4", features = ["fs", "process"] }
 
 # Serialization
 serde = { version = "1.0.229", features = ["derive"] }

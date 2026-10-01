@@ -131,6 +131,18 @@ const params = new URLSearchParams(location.hash.slice(1));
 const DEMO = params.has('demo');
 let token = params.get('token') || sessionStorage.getItem('ssgg-token');
 if (params.get('token')) { sessionStorage.setItem('ssgg-token', token); history.replaceState(null, '', DEMO ? '/#demo' : '/'); }
+// `ssgg ui` passes a one-time ticket (program arguments are visible to other users); trade it once.
+const ticketReady = (async () => {
+  const ticket = params.get('ticket');
+  if (!ticket) return;
+  history.replaceState(null, '', '/');
+  try {
+    const r = await fetch('/api/redeem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticket }) });
+    const j = await r.json();
+    if (j.ok) { token = j.data.token; sessionStorage.setItem('ssgg-token', token); }
+    else state.error = 'This link was already used or expired. Run `ssgg ui` again.';
+  } catch (e) { state.error = e.message; }
+})();
 
 async function call(cmd) {
   if (DEMO) return demoCall(cmd);
@@ -811,7 +823,7 @@ async function demoCall(cmd) {
   }
 }
 
-(async () => { await refresh(); await render(); })();
+(async () => { await ticketReady; await refresh(); await render(); })();
 </script>
 </body>
 </html>

@@ -21,6 +21,12 @@ pub async fn run() -> Result<()> {
         }
     };
 
+    let Some(_lock) = steelseries_gg::engine::control::DaemonLock::acquire()? else {
+        return Err(steelseries_gg::Error::Other(
+            "another ssgg daemon is already running (systemctl --user status ssgg)".to_string(),
+        ));
+    };
+
     let engine = Engine::open(true).await?;
     let tasks = engine.spawn_background();
 

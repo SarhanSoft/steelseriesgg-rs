@@ -214,6 +214,19 @@ impl AudioState {
         Ok(())
     }
 
+    /// Switch to a whole new configuration (profile load): apply it live and save it.
+    pub fn replace_config(&mut self, config: MixerConfig) -> Result<()> {
+        config.validate()?;
+        if let Some(mixer) = self.mixer.as_mut()
+            && mixer.is_running()
+        {
+            mixer.apply(&config)?;
+        }
+        config.save()?;
+        self.config = config;
+        Ok(())
+    }
+
     /// Follow the headset's ChatMix dial.
     pub fn follow_dial(&mut self, chatmix: ChatMix) {
         if self.last_chatmix == Some(chatmix) {

@@ -169,29 +169,32 @@ impl MomentsRecorder {
         Ok(())
     }
 
+    /// Ask the recorder to finish (SIGINT) and return at once; a helper thread kills it if it
+    /// has not exited after 3 s and reaps it either way.
     pub fn stop(&mut self) {
-        if let Some(mut child) = self.child.take() {
-            #[cfg(unix)]
-            {
-                if let Ok(pid) = libc::pid_t::try_from(child.id()) {
-                    // SAFETY: `kill` takes a plain pid and signal number and touches no memory;
-                    // `pid` is our own live child, so the signal cannot reach another process.
-                    unsafe {
-                        libc::kill(pid, libc::SIGINT);
-                    }
+        self.next_restart = None;
+        let Some(mut child) = self.child.take() else {
+            return;
+        };
+        #[cfg(unix)]
+        if let Ok(pid) = libc::pid_t::try_from(child.id()) {
+            // SAFETY: `kill` takes a plain pid and signal number and touches no memory; `pid` is
+            // our own live child, so the signal cannot reach another process.
+            unsafe {
+                libc::kill(pid, libc::SIGINT);
+            }
+        }
+        std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while Instant::now() < deadline {
+                if matches!(child.try_wait(), Ok(Some(_))) {
+                    return;
                 }
-                let deadline = Instant::now() + Duration::from_secs(3);
-                while Instant::now() < deadline {
-                    if matches!(child.try_wait(), Ok(Some(_))) {
-                        return;
-                    }
-                    std::thread::sleep(Duration::from_millis(50));
-                }
+                std::thread::sleep(Duration::from_millis(50));
             }
             let _ = child.kill();
             let _ = child.wait();
-        }
-        self.next_restart = None;
+        });
     }
 
     /// Save the replay buffer to a clip.

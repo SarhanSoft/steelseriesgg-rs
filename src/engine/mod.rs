@@ -58,6 +58,17 @@ const OLED_INTERVAL: Duration = Duration::from_millis(100);
 const OLED_DEFAULT_SECONDS: u32 = 5;
 /// Tick for input-engine notices and the headset ChatMix dial (dial read every other tick).
 const INPUT_INTERVAL: Duration = Duration::from_millis(250);
+/// Every this many hot-plug ticks (~30 s) every frame is re-sent, which also notices dead
+/// handles and relights wireless devices that slept.
+const KEEPALIVE_TICKS: u64 = 15;
+/// Consecutive write failures after which a device is dropped so the next scan reopens it.
+const MAX_WRITE_FAILURES: u32 = 10;
+/// Safety cap on live overlays.
+const MAX_OVERLAYS: usize = 2048;
+/// Animation frame spacing for mice (their reports are slower than keyboards').
+const MOUSE_FRAME_INTERVAL: Duration = Duration::from_millis(100);
+/// Frame spacing once a mouse's writes prove slow (wireless read-back).
+const SLOW_MOUSE_FRAME_INTERVAL: Duration = Duration::from_secs(1);
 
 /// An opened device of any family.
 pub enum DeviceHandle {
@@ -128,6 +139,8 @@ pub struct Overlay {
     pub flash_hz: Option<f32>,
     /// Who pushed it (a GameSense game name), so it can be cleared with its owner.
     pub source: Option<String>,
+    /// GameSense event that produced it; newer colours of the same event replace older ones.
+    pub event: Option<String>,
 }
 
 impl Overlay {
@@ -183,6 +196,9 @@ struct Slot {
     zone_names: Vec<String>,
     /// Whether the last lighting frame went out per key (vs. per zone).
     last_per_key: bool,
+    oled_failures: u32,
+    last_write_at: Option<Instant>,
+    slow_writes: bool,
 }
 
 impl Slot {
@@ -239,9 +255,14 @@ struct Inner {
     screens: ScreenManager,
     /// GameSense game that owns the temporary OLED content, if any.
     screen_source: Option<String>,
-    audio: audio::AudioState,
     input: bindings::InputState,
     daemon: bool,
+    /// Mixer settings from a just-loaded profile, applied by `Engine` outside this lock.
+    pending_mixer: Option<crate::mixer::MixerConfig>,
+    /// Mixer settings captured by `Engine` for a profile save.
+    mixer_snapshot: Option<Value>,
+    /// Devices that lost contact repeatedly, for quieter logging.
+    reconnects: HashMap<String, u32>,
 }
 
 /// Handles for the daemon's background loops; dropping it does not stop them, call
@@ -260,6 +281,9 @@ impl BackgroundTasks {
 
 pub struct Engine {
     inner: Mutex<Inner>,
+    /// The mixer has its own lock: its calls run external programs and can take seconds,
+    /// which must not stall lighting or the control API.
+    audio: Mutex<audio::AudioState>,
     daemon: bool,
     started: Instant,
 }
@@ -287,6 +311,7 @@ impl Engine {
         };
         let state = EngineState::load();
         let screens = ScreenManager::new(state.oled_idle.clone());
+        let moments_config = state.moments.clone().unwrap_or_else(|| config.moments.clone());
         let engine = Arc::new(Self {
             inner: Mutex::new(Inner {
                 manager,
@@ -294,17 +319,20 @@ impl Engine {
                 state,
                 screens,
                 screen_source: None,
-                audio: audio::AudioState::load(),
                 input: bindings::InputState::default(),
                 daemon,
+                pending_mixer: None,
+                mixer_snapshot: None,
+                reconnects: HashMap::new(),
                 state_dirty: false,
                 profiles,
                 overlays: Vec::new(),
                 open_failures: HashMap::new(),
                 epoch: Instant::now(),
-                moments: MomentsRecorder::new(config.moments.clone()),
+                moments: MomentsRecorder::new(moments_config),
                 config,
             }),
+            audio: Mutex::new(audio::AudioState::load()),
             daemon,
             started: Instant::now(),
         });
@@ -316,15 +344,17 @@ impl Engine {
     /// Bring up what the remembered state asks for: the mixer and the active profile's key
     /// bindings (daemon only).
     async fn start_services(&self) {
-        let mut inner = self.inner.lock().await;
-        if !inner.daemon {
+        if !self.daemon {
             return;
         }
-        if inner.state.mixer_enabled
-            && let Err(e) = inner.audio.start()
-        {
-            warn!("Audio mixer not started: {e}");
+        let mixer_enabled = self.inner.lock().await.state.mixer_enabled;
+        if mixer_enabled {
+            let mut audio = self.audio.lock().await;
+            if let Err(e) = tokio::task::block_in_place(|| audio.start()) {
+                warn!("Audio mixer not started: {e}");
+            }
         }
+        let mut inner = self.inner.lock().await;
         let bindings = inner
             .state
             .active_profile
@@ -342,8 +372,11 @@ impl Engine {
     /// Stop everything that changes the system (mixer defaults, grabbed input, recorder) and
     /// save state. Called by the daemon on exit.
     pub async fn shutdown(&self) {
+        {
+            let mut audio = self.audio.lock().await;
+            tokio::task::block_in_place(|| audio.stop());
+        }
         let mut inner = self.inner.lock().await;
-        inner.audio.stop();
         inner.input.stop();
         inner.moments.stop();
         inner.save_state();
@@ -366,15 +399,67 @@ impl Engine {
 
     /// Execute one command and return its JSON result.
     pub async fn execute(&self, command: Command) -> Result<Value> {
-        if let Command::MacroRecord { stop_key, timeout_secs } = command {
-            return self.record_macro(stop_key, timeout_secs).await;
+        match command {
+            Command::MacroRecord { stop_key, timeout_secs } => return self.record_macro(stop_key, timeout_secs).await,
+            Command::Mixer { patch, enabled } => return self.mixer_command(patch, enabled).await,
+            _ => {}
         }
-        let mut inner = self.inner.lock().await;
-        let result = inner.execute(command, self.daemon).await;
-        if !self.daemon && inner.state_dirty {
-            inner.save_state();
+        if matches!(command, Command::ProfileSave { .. }) {
+            let enabled = self.inner.lock().await.state.mixer_enabled;
+            let snapshot = if enabled {
+                Some(serde_json::to_value(&self.audio.lock().await.config)?)
+            } else {
+                None
+            };
+            self.inner.lock().await.mixer_snapshot = snapshot;
+        }
+        let (result, pending) = {
+            let mut inner = self.inner.lock().await;
+            let result = inner.execute(command, self.daemon).await;
+            if !self.daemon && inner.state_dirty {
+                inner.save_state();
+            }
+            (result, inner.pending_mixer.take())
+        };
+        if let Some(config) = pending {
+            let mut audio = self.audio.lock().await;
+            if let Err(e) = tokio::task::block_in_place(|| audio.replace_config(config)) {
+                warn!("Profile mixer settings not applied: {e}");
+            }
         }
         result
+    }
+
+    /// Mixer settings and on/off, under the mixer's own lock.
+    async fn mixer_command(&self, patch: Option<audio::MixerPatch>, enabled: Option<bool>) -> Result<Value> {
+        let enabled_now = {
+            let mut inner = self.inner.lock().await;
+            if let Some(enabled) = enabled {
+                inner.state.mixer_enabled = enabled;
+                inner.state_dirty = true;
+                if !self.daemon {
+                    inner.save_state();
+                }
+            }
+            inner.state.mixer_enabled
+        };
+        let daemon = self.daemon;
+        let mut audio = self.audio.lock().await;
+        tokio::task::block_in_place(|| {
+            if let Some(enabled) = enabled
+                && daemon
+            {
+                if enabled {
+                    audio.start()?;
+                } else {
+                    audio.stop();
+                }
+            }
+            if let Some(patch) = patch {
+                audio.update(&patch)?;
+            }
+            Ok(serde_json::to_value(audio.view(enabled_now))?)
+        })
     }
 
     /// Push a temporary lighting overlay (GameSense, notifications).
@@ -401,8 +486,15 @@ impl Engine {
                 game,
                 content,
                 duration,
+                size,
             } => {
-                if !inner.slots.values().any(|s| s.oled_size.is_some()) {
+                // A generic screen handler sends one variant per screen size; keep the one that
+                // fits the connected keyboard.
+                let fits = inner
+                    .slots
+                    .values()
+                    .any(|s| s.oled_size.is_some() && (size.is_none() || s.oled_size == size));
+                if !fits {
                     return;
                 }
                 match inner.screens.show(&content, duration) {
@@ -448,10 +540,15 @@ impl Engine {
         handles.push(tokio::spawn(async move {
             let mut ticker = tokio::time::interval(HOTPLUG_INTERVAL);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut tick: u64 = 0;
             loop {
                 ticker.tick().await;
+                tick += 1;
                 if let Err(e) = engine.refresh_devices().await {
                     debug!("Device rescan failed: {e}");
+                }
+                if tick.is_multiple_of(KEEPALIVE_TICKS) {
+                    engine.inner.lock().await.force_resend();
                 }
             }
         }));
@@ -537,29 +634,28 @@ impl Engine {
             Some(key) => key,
             None => crate::input::InputKey::parse("KEY_ESC")?,
         };
-        let timeout = Duration::from_secs(u64::from(timeout_secs.unwrap_or(30).clamp(1, 300)));
-        let (resume, daemon) = {
-            let mut inner = self.inner.lock().await;
-            let resume = inner.input.active().clone();
-            inner.input.stop();
-            (resume, inner.daemon)
-        };
+        // Below the control client's 60 s request limit.
+        let timeout = Duration::from_secs(u64::from(timeout_secs.unwrap_or(30).clamp(1, 55)));
+        self.inner.lock().await.input.pause();
         let filter = crate::input::DeviceFilter::steelseries();
         let recorded =
             tokio::task::spawn_blocking(move || crate::input::InputEngine::record_macro(&filter, stop_key, timeout))
                 .await
-                .map_err(|e| Error::Other(format!("macro recorder task failed: {e}")))?;
-        self.inner.lock().await.input.apply(resume, daemon);
-        Ok(json!({ "steps": recorded? }))
+                .map_err(|e| Error::Other(format!("macro recorder task failed: {e}")));
+        // Resume with the bindings active *now* (a profile may have switched meanwhile).
+        let daemon = self.daemon;
+        self.inner.lock().await.input.resume(daemon);
+        Ok(json!({ "steps": recorded?? }))
     }
 
     /// One input/ChatMix step (daemon loop): profile switches requested by bindings, and the
     /// headset dial driving the mixer.
     async fn input_tick(&self, read_dial: bool) {
-        let switches = {
+        let mixer_running = read_dial && self.audio.try_lock().is_ok_and(|mut audio| audio.is_running());
+        let (switches, dial) = {
             let mut inner = self.inner.lock().await;
-            if read_dial && inner.audio.is_running() {
-                let mut dial = None;
+            let mut dial = None;
+            if mixer_running {
                 for slot in inner.slots.values_mut() {
                     if !matches!(slot.handle, DeviceHandle::Headset(_)) || slot.status.chatmix.is_none() {
                         continue;
@@ -571,12 +667,13 @@ impl Engine {
                         slot.status = status;
                     }
                 }
-                if let Some(chatmix) = dial {
-                    inner.audio.follow_dial(chatmix);
-                }
             }
-            inner.input.poll()
+            (inner.input.poll(), dial)
         };
+        if let Some(chatmix) = dial {
+            let mut audio = self.audio.lock().await;
+            tokio::task::block_in_place(|| audio.follow_dial(chatmix));
+        }
         for name in switches {
             match self.execute(Command::ProfileLoad { name: name.clone() }).await {
                 Ok(_) => notify::send("Profile switched", &name, Urgency::Low),
@@ -614,9 +711,16 @@ impl Engine {
                 inner.config.autoswitch.notify,
             )
         };
-        if !enabled || rules.is_empty() {
-            return;
-        }
+        let rules = if !enabled || rules.is_empty() {
+            if auto.auto_active().is_none() {
+                return;
+            }
+            // Switching was turned off (or its rules removed) while a program's profile was
+            // active: deciding with no rules restores the previous profile.
+            Vec::new()
+        } else {
+            rules
+        };
         let running = tokio::task::block_in_place(|| watcher.running());
         let Some(target) = auto.decide(current.as_deref(), &rules, &running, fallback.as_deref()) else {
             return;
@@ -738,6 +842,9 @@ impl Inner {
                         last_oled: None,
                         zone_names,
                         last_per_key: false,
+                        oled_failures: 0,
+                        last_write_at: None,
+                        slow_writes: false,
                         model_key: model_key(&info),
                         info,
                         handle,
@@ -793,21 +900,47 @@ impl Inner {
 
     /// Re-apply remembered settings the device does not keep itself, and set up its lighting.
     fn restore(&mut self, key: &str, slot: &mut Slot) {
+        // A unit seen for the first time while a profile is active starts from that profile.
+        if !self.state.devices.contains_key(key)
+            && let Some(device_profile) = self
+                .state
+                .active_profile
+                .as_ref()
+                .and_then(|name| self.profiles.as_ref()?.get(name))
+                .and_then(|profile| profile.devices.get(&slot.model_key))
+                .cloned()
+        {
+            let record = self.state.record_mut(key, &slot.info.name);
+            record.lighting = device_profile.lighting;
+            record.settings = device_profile.settings;
+            record.reapply_all = true;
+            self.state_dirty = true;
+        }
+
         let lighting = self.state.effective_lighting(key).clone();
         slot.configure_lighting(&lighting);
 
-        let Some(record) = self.state.devices.get(key) else {
+        let Some(record) = self.state.devices.get_mut(key) else {
             return;
         };
+        let apply_all = std::mem::take(&mut record.reapply_all);
+        let settings = record.settings.clone();
+        if apply_all {
+            self.state_dirty = true;
+        }
         let descriptors = slot.handle.descriptors();
         let Some(configurable) = slot.handle.configurable() else {
             return;
         };
-        for (id, value) in &record.settings {
-            let Some(descriptor) = descriptors.iter().find(|d| &d.id == id) else {
-                continue;
+        for (id, value) in &settings {
+            let descriptor = match crate::devices::settings::validate_against(&descriptors, id, value) {
+                Ok(descriptor) => descriptor,
+                Err(e) => {
+                    debug!("Stored {id} not restored on {}: {e}", slot.info.name);
+                    continue;
+                }
             };
-            if descriptor.persists_on_device || matches!(descriptor.kind, SettingKind::Action) {
+            if matches!(descriptor.kind, SettingKind::Action) || (descriptor.persists_on_device && !apply_all) {
                 continue;
             }
             if let Err(e) = configurable.apply_setting(id, value) {
@@ -817,10 +950,58 @@ impl Inner {
     }
 
     fn push_overlay(&mut self, overlay: Overlay) {
-        // A newer colour for the same LEDs replaces the older one.
-        self.overlays
-            .retain(|o| !(o.target == overlay.target && o.zone == overlay.zone && o.source == overlay.source));
+        // A newer colour for the same LEDs from the same owner replaces the older one; for key
+        // lists this is per key, so animated frames never pile up.
+        let same_owner =
+            |o: &Overlay| o.target == overlay.target && o.source == overlay.source && o.event == overlay.event;
+        match &overlay.zone {
+            OverlayZone::Keys(keys) => {
+                for old in self.overlays.iter_mut().filter(|o| same_owner(o)) {
+                    if let OverlayZone::Keys(old_keys) = &mut old.zone {
+                        old_keys.retain(|k| !keys.contains(k));
+                    }
+                }
+                self.overlays
+                    .retain(|o| !matches!(&o.zone, OverlayZone::Keys(keys) if keys.is_empty()));
+            }
+            OverlayZone::All => self.overlays.retain(|o| !same_owner(o)),
+            zone => self.overlays.retain(|o| !(same_owner(o) && &o.zone == zone)),
+        }
         self.overlays.push(overlay);
+        if self.overlays.len() > MAX_OVERLAYS {
+            let excess = self.overlays.len() - MAX_OVERLAYS;
+            self.overlays.drain(..excess);
+        }
+    }
+
+    /// Forget what was last sent so every device gets its full frame again.
+    fn force_resend(&mut self) {
+        for slot in self.slots.values_mut() {
+            slot.last_frame.clear();
+            slot.last_oled = None;
+        }
+    }
+
+    /// Drop devices whose writes keep failing, so the next scan reopens them and restores
+    /// their settings (quick replug, suspend/resume, usbhid re-bind).
+    fn drop_dead_slots(&mut self) {
+        let dead: Vec<String> = self
+            .slots
+            .iter()
+            .filter(|(_, s)| s.write_failures >= MAX_WRITE_FAILURES || s.oled_failures >= MAX_WRITE_FAILURES)
+            .map(|(k, _)| k.clone())
+            .collect();
+        for key in dead {
+            if let Some(slot) = self.slots.remove(&key) {
+                let count = self.reconnects.entry(key.clone()).or_insert(0);
+                *count += 1;
+                if *count <= 3 {
+                    info!("Lost contact with {} ({key}); reopening", slot.info.name);
+                } else {
+                    debug!("Lost contact with {} ({key}) again", slot.info.name);
+                }
+            }
+        }
     }
 
     fn resolve(&self, selector: &str) -> Result<String> {
@@ -983,10 +1164,23 @@ impl Inner {
                 idle,
                 clear,
             } => {
-                if !self.slots.values().any(|s| s.oled_size.is_some()) {
+                let Some((width, height)) = self.slots.values().find_map(|s| s.oled_size) else {
                     return Err(Error::Unsupported(
                         "no connected keyboard has an OLED screen".to_string(),
                     ));
+                };
+                let bitmap_size = match (&content, &idle) {
+                    (Some(screen::ScreenContent::Bitmap { width, height, .. }), _)
+                    | (_, Some(screen::IdleScreen::Bitmap { width, height, .. })) => Some((*width, *height)),
+                    _ => None,
+                };
+                if let Some(size) = bitmap_size
+                    && size != (width, height)
+                {
+                    return Err(Error::InvalidConfig(format!(
+                        "bitmap is {}x{}, the screen is {width}x{height}",
+                        size.0, size.1
+                    )));
                 }
                 if let Some(idle) = idle {
                     self.screens.set_idle(idle.clone())?;
@@ -1006,24 +1200,7 @@ impl Inner {
                 }
                 Ok(json!({ "idle": self.state.oled_idle }))
             }
-            Command::Mixer { patch, enabled } => {
-                if let Some(enabled) = enabled {
-                    self.state.mixer_enabled = enabled;
-                    self.state_dirty = true;
-                    if daemon {
-                        if enabled {
-                            self.audio.start()?;
-                        } else {
-                            self.audio.stop();
-                        }
-                    }
-                }
-                if let Some(patch) = patch {
-                    self.audio.update(&patch)?;
-                }
-                let enabled = self.state.mixer_enabled;
-                Ok(serde_json::to_value(self.audio.view(enabled))?)
-            }
+            Command::Mixer { .. } => Err(Error::Other("mixer commands are handled by the engine".to_string())),
             Command::Bindings { profile } => {
                 let name = match profile {
                     Some(name) => Some(name),
@@ -1081,11 +1258,9 @@ impl Inner {
                 if daemon && enabled {
                     self.moments.supervise();
                 }
-                // Persist to config.toml so the choice survives a restart.
-                let mut file_config = Config::load().unwrap_or_default();
-                file_config.moments = config;
-                file_config.save()?;
-                self.config.moments = file_config.moments.clone();
+                // Remembered in engine-state.json; config.toml stays as the user wrote it.
+                self.state.moments = Some(config);
+                self.state_dirty = true;
                 Ok(serde_json::to_value(self.moments.status())?)
             }
             Command::ProfileApps { name, apps } => {
@@ -1225,6 +1400,18 @@ impl Inner {
                 }
             }
 
+            let is_mouse = matches!(slot.handle, DeviceHandle::Mouse(_));
+            if is_mouse {
+                let spacing = if slot.slow_writes {
+                    SLOW_MOUSE_FRAME_INTERVAL
+                } else {
+                    MOUSE_FRAME_INTERVAL
+                };
+                if slot.last_write_at.is_some_and(|at| now.duration_since(at) < spacing) {
+                    continue;
+                }
+            }
+            let write_started = Instant::now();
             let per_key = !key_layer.is_empty() && slot.handle.supports_per_key();
             let result = if per_key {
                 let DeviceHandle::Keyboard(keyboard) = &mut slot.handle else {
@@ -1253,6 +1440,10 @@ impl Inner {
                 }
                 slot.handle.write_zones(&colors).await.map(|()| (colors, false))
             };
+            slot.last_write_at = Some(now);
+            if is_mouse && write_started.elapsed() > Duration::from_millis(50) {
+                slot.slow_writes = true;
+            }
             match result {
                 Ok((sent, was_per_key)) => {
                     slot.last_frame = sent;
@@ -1261,12 +1452,13 @@ impl Inner {
                 }
                 Err(e) => {
                     slot.write_failures += 1;
-                    if slot.write_failures == 1 || slot.write_failures.is_multiple_of(300) {
+                    if slot.write_failures == 1 {
                         warn!("Lighting write to {} failed: {e}", slot.info.name);
                     }
                 }
             }
         }
+        self.drop_dead_slots();
     }
 
     /// Send the current OLED frame to every keyboard with a screen, when it changed.
@@ -1288,15 +1480,19 @@ impl Inner {
                 continue;
             };
             match keyboard.draw_oled(frame).await {
-                Ok(()) => slot.last_oled = Some(frame.clone()),
+                Ok(()) => {
+                    slot.last_oled = Some(frame.clone());
+                    slot.oled_failures = 0;
+                }
                 Err(e) => {
-                    slot.write_failures += 1;
-                    if slot.write_failures == 1 || slot.write_failures.is_multiple_of(300) {
+                    slot.oled_failures += 1;
+                    if slot.oled_failures == 1 {
                         warn!("OLED write to {} failed: {e}", slot.info.name);
                     }
                 }
             }
         }
+        self.drop_dead_slots();
     }
 
     /// Refresh battery / ChatMix readings. `notify` raises desktop notifications for low battery.
@@ -1466,11 +1662,7 @@ impl Inner {
             );
         }
         let lighting = self.state.lighting.clone();
-        let mixer = if self.state.mixer_enabled {
-            Some(serde_json::to_value(&self.audio.config)?)
-        } else {
-            None
-        };
+        let mixer = self.mixer_snapshot.take();
         let bindings = if self.input.active().bindings.is_empty() {
             None
         } else {
@@ -1530,6 +1722,20 @@ impl Inner {
                 }
             }
         }
+        // Known units of these models that are unplugged get the profile when they return.
+        for (model, device_profile) in &profile.devices {
+            let prefix = format!("{model}:");
+            for (key, record) in self.state.devices.iter_mut() {
+                if !key.starts_with(&prefix) || self.slots.contains_key(key) {
+                    continue;
+                }
+                record.lighting = device_profile.lighting.clone();
+                record
+                    .settings
+                    .extend(device_profile.settings.iter().map(|(k, v)| (k.clone(), v.clone())));
+                record.reapply_all = true;
+            }
+        }
 
         match bindings::bindings_from_profile(profile.bindings.as_ref()) {
             Ok(set) => {
@@ -1540,15 +1746,7 @@ impl Inner {
         }
         if let Some(mixer) = &profile.mixer {
             match serde_json::from_value::<crate::mixer::MixerConfig>(mixer.clone()) {
-                Ok(config) => {
-                    if let Some(running) = self.audio.mixer.as_mut()
-                        && running.is_running()
-                        && let Err(e) = running.apply(&config)
-                    {
-                        errors.push(format!("mixer: {e}"));
-                    }
-                    self.audio.config = config;
-                }
+                Ok(config) => self.pending_mixer = Some(config),
                 Err(e) => errors.push(format!("mixer settings: {e}")),
             }
         }

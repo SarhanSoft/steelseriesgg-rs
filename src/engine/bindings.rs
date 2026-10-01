@@ -26,6 +26,8 @@ pub struct InputState {
     engine: Option<InputEngine>,
     active: BindingSet,
     last_error: Option<String>,
+    /// Macro recording in progress: remember new sets but do not grab devices.
+    paused: bool,
 }
 
 impl InputState {
@@ -45,7 +47,7 @@ impl InputState {
     /// just remembers the set.
     pub fn apply(&mut self, bindings: BindingSet, daemon: bool) {
         self.active = bindings;
-        if !daemon {
+        if !daemon || self.paused {
             return;
         }
         let wanted = self.active.is_active();
@@ -70,6 +72,19 @@ impl InputState {
             },
             (_, false) => self.stop(),
         }
+    }
+
+    /// Release devices for a macro recording; `apply` only remembers sets until `resume`.
+    pub fn pause(&mut self) {
+        self.paused = true;
+        self.stop();
+    }
+
+    /// End a pause and bring back whatever set is active now.
+    pub fn resume(&mut self, daemon: bool) {
+        self.paused = false;
+        let set = self.active.clone();
+        self.apply(set, daemon);
     }
 
     /// Release every captured device (shutdown, macro recording).

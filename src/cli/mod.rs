@@ -20,6 +20,15 @@ pub async fn call(command: Command) -> Result<(Value, bool)> {
     if let Some(value) = control::send(&command).await? {
         return Ok((value, true));
     }
+    // Never run a second engine next to a live daemon: both would drive the same devices and
+    // overwrite each other's state.
+    if control::DaemonLock::is_held() {
+        return Err(Error::Other(
+            "the daemon is running but its control API is unreachable (is [control] enabled = false in \
+             config.toml?). Stop it (systemctl --user stop ssgg) to use the CLI directly."
+                .to_string(),
+        ));
+    }
     let renders = matches!(
         command,
         Command::Lighting { .. } | Command::ProfileLoad { .. } | Command::Refresh
@@ -33,7 +42,6 @@ pub async fn call(command: Command) -> Result<(Value, bool)> {
     if draws_oled {
         engine.render_oled_once().await;
     }
-    engine.save().await;
     Ok((value, false))
 }
 
@@ -390,13 +398,12 @@ pub async fn moments(command: Command) -> Result<()> {
 
 /// `ssgg ui` — open the control panel of the running daemon in a browser.
 pub async fn open_ui() -> Result<()> {
-    if control::send(&Command::Ping).await?.is_none() {
+    let Some((info, ticket)) = control::issue_ticket().await? else {
         return Err(Error::Other(
             "the daemon is not running; start it with `systemctl --user start ssgg` (or `ssgg daemon`)".to_string(),
         ));
-    }
-    let info = control::ControlInfo::read().ok_or_else(|| Error::Other("control file disappeared".to_string()))?;
-    let url = info.panel_url();
+    };
+    let url = info.ticket_url(&ticket);
     let opener = if cfg!(target_os = "windows") {
         "explorer"
     } else if cfg!(target_os = "macos") {
@@ -406,7 +413,7 @@ pub async fn open_ui() -> Result<()> {
     };
     match std::process::Command::new(opener).arg(&url).spawn() {
         Ok(_) => println!("Opened the control panel in your browser."),
-        Err(_) => println!("Open this address in a browser:\n  {url}"),
+        Err(_) => println!("Open this address in a browser within a minute (it works once):\n  {url}"),
     }
     Ok(())
 }

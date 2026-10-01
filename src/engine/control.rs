@@ -12,7 +12,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::Router;
 use axum::body::Bytes;
@@ -30,6 +30,10 @@ use super::{Command, Engine};
 use crate::{Error, Result};
 
 const CONTROL_FILE: &str = "control.json";
+#[cfg(unix)]
+const LOCK_FILE: &str = "daemon.lock";
+/// How long a one-time panel ticket stays valid.
+const TICKET_LIFETIME: Duration = Duration::from_secs(60);
 const PANEL_HTML: &str = include_str!("panel.html");
 /// Largest request body accepted (a full profile with bindings fits easily).
 const MAX_BODY: usize = 1024 * 1024;
@@ -90,6 +94,56 @@ impl ControlInfo {
     pub fn panel_url(&self) -> String {
         format!("http://127.0.0.1:{}/#token={}", self.port, self.token)
     }
+
+    /// URL carrying a one-time ticket instead of the token. Program arguments are visible to
+    /// other local users, so `ssgg ui` passes this; the page trades it for the token once.
+    pub fn ticket_url(&self, ticket: &str) -> String {
+        format!("http://127.0.0.1:{}/#ticket={ticket}", self.port)
+    }
+}
+
+/// Held by the running daemon for its whole life, so a second daemon cannot start and a CLI
+/// can tell "no daemon" from "daemon running but unreachable".
+pub struct DaemonLock {
+    #[cfg(unix)]
+    _file: std::fs::File,
+}
+
+impl DaemonLock {
+    /// Take the lock; `Ok(None)` when another daemon holds it.
+    pub fn acquire() -> Result<Option<Self>> {
+        #[cfg(unix)]
+        {
+            let dir = ControlInfo::dir()?;
+            std::fs::create_dir_all(&dir)?;
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .write(true)
+                .open(dir.join(LOCK_FILE))?;
+            match rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive) {
+                Ok(()) => Ok(Some(Self { _file: file })),
+                Err(rustix::io::Errno::WOULDBLOCK) => Ok(None),
+                Err(e) => Err(Error::Io(e.into())),
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            Ok(Some(Self {}))
+        }
+    }
+
+    /// Whether some daemon currently holds the lock.
+    pub fn is_held() -> bool {
+        #[cfg(unix)]
+        {
+            matches!(Self::acquire(), Ok(None))
+        }
+        #[cfg(not(unix))]
+        {
+            false
+        }
+    }
 }
 
 fn new_token() -> Result<String> {
@@ -103,6 +157,7 @@ struct ServerState {
     engine: Arc<Engine>,
     token: Arc<String>,
     port: u16,
+    tickets: Arc<parking_lot::Mutex<Vec<(String, Instant)>>>,
 }
 
 /// A running control server.
@@ -145,10 +200,13 @@ impl ControlServer {
             engine,
             token: Arc::new(info.token.clone()),
             port,
+            tickets: Arc::new(parking_lot::Mutex::new(Vec::new())),
         };
         let app = Router::new()
             .route("/", get(panel))
             .route("/api/command", post(command))
+            .route("/api/ticket", post(issue_ticket_route))
+            .route("/api/redeem", post(redeem_ticket_route))
             .fallback(not_found)
             .with_state(state);
 
@@ -249,6 +307,63 @@ async fn command(State(state): State<ServerState>, headers: HeaderMap, body: Byt
     }
 }
 
+/// Authenticated: create a one-time ticket the browser can trade for the token.
+async fn issue_ticket_route(State(state): State<ServerState>, headers: HeaderMap) -> Response {
+    if !host_is_loopback(&headers, state.port) {
+        return reply(StatusCode::FORBIDDEN, json!({"ok": false, "error": "bad host"}));
+    }
+    if !token_matches(&headers, &state.token) {
+        return reply(
+            StatusCode::UNAUTHORIZED,
+            json!({"ok": false, "error": "missing or wrong token"}),
+        );
+    }
+    let ticket = match new_token() {
+        Ok(t) => t,
+        Err(e) => {
+            return reply(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                json!({"ok": false, "error": e.to_string()}),
+            );
+        }
+    };
+    let now = Instant::now();
+    let mut tickets = state.tickets.lock();
+    tickets.retain(|(_, expires)| *expires > now);
+    tickets.push((ticket.clone(), now + TICKET_LIFETIME));
+    reply(StatusCode::OK, json!({"ok": true, "data": {"ticket": ticket}}))
+}
+
+/// Trade a valid, unused ticket for the token (single use, 60 s).
+async fn redeem_ticket_route(State(state): State<ServerState>, headers: HeaderMap, body: Bytes) -> Response {
+    if !host_is_loopback(&headers, state.port) {
+        return reply(StatusCode::FORBIDDEN, json!({"ok": false, "error": "bad host"}));
+    }
+    let given = serde_json::from_slice::<Value>(&body)
+        .ok()
+        .and_then(|v| v["ticket"].as_str().map(str::to_string))
+        .unwrap_or_default();
+    let now = Instant::now();
+    let mut tickets = state.tickets.lock();
+    tickets.retain(|(_, expires)| *expires > now);
+    let found = tickets.iter().position(|(t, _)| {
+        t.len() == given.len() && t.bytes().zip(given.bytes()).fold(0u8, |acc, (a, b)| acc | (a ^ b)) == 0
+    });
+    match found {
+        Some(index) => {
+            tickets.remove(index);
+            reply(
+                StatusCode::OK,
+                json!({"ok": true, "data": {"token": state.token.as_str()}}),
+            )
+        }
+        None => reply(
+            StatusCode::FORBIDDEN,
+            json!({"ok": false, "error": "ticket expired or already used"}),
+        ),
+    }
+}
+
 async fn not_found() -> Response {
     reply(StatusCode::NOT_FOUND, json!({"ok": false, "error": "not found"}))
 }
@@ -266,10 +381,12 @@ pub async fn send(command: &Command) -> Result<Option<Value>> {
             Ok(Ok(stream)) => stream,
             _ => return Ok(None),
         };
-    let (status, body) = match tokio::time::timeout(Duration::from_secs(60), exchange(stream, &info, command)).await {
-        Ok(result) => result?,
-        Err(_) => return Err(Error::Other("the daemon did not answer within 60 s".to_string())),
-    };
+    let body = serde_json::to_vec(command)?;
+    let (status, body) =
+        match tokio::time::timeout(Duration::from_secs(60), exchange(stream, &info, "/api/command", &body)).await {
+            Ok(result) => result?,
+            Err(_) => return Err(Error::Other("the daemon did not answer within 60 s".to_string())),
+        };
     if status == 401 {
         // Another process holds the port, or the file belongs to a dead daemon.
         tracing::debug!("Control file is stale (401); falling back to direct device access");
@@ -289,17 +406,36 @@ pub async fn send(command: &Command) -> Result<Option<Value>> {
     }
 }
 
-async fn exchange(mut stream: TcpStream, info: &ControlInfo, command: &Command) -> Result<(u16, Vec<u8>)> {
-    let body = serde_json::to_vec(command)?;
+/// Ask the running daemon for a one-time panel ticket. `Ok(None)` when no daemon answers.
+pub async fn issue_ticket() -> Result<Option<(ControlInfo, String)>> {
+    let Some(info) = ControlInfo::read() else {
+        return Ok(None);
+    };
+    let Ok(Ok(stream)) =
+        tokio::time::timeout(Duration::from_millis(800), TcpStream::connect(("127.0.0.1", info.port))).await
+    else {
+        return Ok(None);
+    };
+    let (status, body) = tokio::time::timeout(Duration::from_secs(10), exchange(stream, &info, "/api/ticket", b"{}"))
+        .await
+        .map_err(|_| Error::Other("the daemon did not answer".to_string()))??;
+    if status != 200 {
+        return Ok(None);
+    }
+    let parsed: Value = serde_json::from_slice(&body)?;
+    Ok(parsed["data"]["ticket"].as_str().map(|t| (info.clone(), t.to_string())))
+}
+
+async fn exchange(mut stream: TcpStream, info: &ControlInfo, path: &str, body: &[u8]) -> Result<(u16, Vec<u8>)> {
     let head = format!(
-        "POST /api/command HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\n\
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\n\
          Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         info.port,
         info.token,
         body.len()
     );
     stream.write_all(head.as_bytes()).await?;
-    stream.write_all(&body).await?;
+    stream.write_all(body).await?;
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw).await?;
     parse_http_response(&raw)
@@ -343,7 +479,10 @@ fn dechunk(mut data: &[u8]) -> Result<Vec<u8>> {
         if size == 0 {
             return Ok(out);
         }
-        if data.len() < size + 2 {
+        let needed = size
+            .checked_add(2)
+            .ok_or_else(|| Error::Other("malformed chunk size".to_string()))?;
+        if data.len() < needed {
             return Err(Error::Other("truncated chunked body".to_string()));
         }
         out.extend_from_slice(&data[..size]);

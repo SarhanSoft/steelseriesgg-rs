@@ -2709,6 +2709,7 @@ async fn wait_for_shutdown() -> Result<()> {
 
         let mut sigterm = signal(SignalKind::terminate())?;
         let mut sigint = signal(SignalKind::interrupt())?;
+        let mut sighup = signal(SignalKind::hangup())?;
 
         tokio::select! {
             _ = sigterm.recv() => {
@@ -2716,6 +2717,9 @@ async fn wait_for_shutdown() -> Result<()> {
             }
             _ = sigint.recv() => {
                 info!("Received SIGINT, shutting down gracefully...");
+            }
+            _ = sighup.recv() => {
+                info!("Received SIGHUP, shutting down gracefully...");
             }
         }
     }

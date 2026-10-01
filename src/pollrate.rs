@@ -279,11 +279,22 @@ fn rebind_steelseries_usbhid() -> Result<usize> {
             interfaces.push(name);
         }
     }
+    let mut failures = Vec::new();
     for interface in &interfaces {
-        std::fs::write(format!("{DRIVER}/unbind"), interface)?;
-        std::fs::write(format!("{DRIVER}/bind"), interface)?;
+        if let Err(e) = std::fs::write(format!("{DRIVER}/unbind"), interface) {
+            failures.push(format!("unbind {interface}: {e}"));
+            continue;
+        }
+        // Always try to bind back, even if this fails for one interface.
+        if let Err(e) = std::fs::write(format!("{DRIVER}/bind"), interface) {
+            failures.push(format!("bind {interface}: {e} (replug the device)"));
+        }
     }
-    Ok(interfaces.len())
+    if failures.is_empty() {
+        Ok(interfaces.len())
+    } else {
+        Err(Error::DeviceCommunication(failures.join("; ")))
+    }
 }
 
 #[cfg(not(target_os = "linux"))]

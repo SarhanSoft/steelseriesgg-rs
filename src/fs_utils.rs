@@ -67,6 +67,24 @@ pub fn secure_write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Res
     Ok(())
 }
 
+/// Write `contents` to a temporary file next to `path`, then rename it over `path`, so a crash
+/// mid-write leaves either the old or the new file, never a truncated one.
+pub fn secure_write_atomic<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+    let path = path.as_ref();
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| Error::FileSystemError(format!("{} has no file name", path.display())))?;
+    let mut tmp_name = file_name.to_os_string();
+    tmp_name.push(format!(".tmp{}", std::process::id()));
+    let tmp = path.with_file_name(tmp_name);
+    secure_write(&tmp, contents)?;
+    if let Err(e) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.into());
+    }
+    Ok(())
+}
+
 /// Asynchronously write data to a file securely.
 pub async fn secure_write_async<P: AsRef<Path> + Send + 'static, C: AsRef<[u8]> + Send + 'static>(
     path: P,

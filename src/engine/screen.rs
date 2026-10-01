@@ -3,7 +3,11 @@
 
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+
+use parking_lot::Mutex;
 
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
@@ -75,8 +79,27 @@ pub fn render_content(content: &ScreenContent, width: u32, height: u32) -> Resul
     })
 }
 
+/// Largest image file accepted for the screen.
+const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
+
 fn load_image(path: &str, width: u32, height: u32) -> Result<Vec<(OledFrame, Duration)>> {
     let path = Path::new(path);
+    // Refuse FIFOs, devices and huge files: they would stall or exhaust the daemon.
+    let meta = std::fs::metadata(path)
+        .map_err(|e| Error::InvalidConfig(format!("cannot read image {}: {e}", path.display())))?;
+    if !meta.is_file() {
+        return Err(Error::InvalidConfig(format!(
+            "{} is not a regular file",
+            path.display()
+        )));
+    }
+    if meta.len() > MAX_IMAGE_BYTES {
+        return Err(Error::InvalidConfig(format!(
+            "{} is larger than {} MB",
+            path.display(),
+            MAX_IMAGE_BYTES / 1024 / 1024
+        )));
+    }
     let bytes =
         std::fs::read(path).map_err(|e| Error::InvalidConfig(format!("cannot read image {}: {e}", path.display())))?;
     let options = ImageOptions {
@@ -110,10 +133,43 @@ impl Timed {
     }
 }
 
+#[derive(Clone)]
 struct NowPlaying {
     title: String,
     artist: String,
     progress: f32,
+}
+
+/// Polls `playerctl` on its own thread, so a slow or hung MPRIS player never blocks the daemon.
+struct PlayerWatcher {
+    latest: Arc<Mutex<Option<NowPlaying>>>,
+    stop: Arc<AtomicBool>,
+}
+
+impl PlayerWatcher {
+    fn start() -> Self {
+        let latest = Arc::new(Mutex::new(None));
+        let stop = Arc::new(AtomicBool::new(false));
+        let (shared, flag) = (Arc::clone(&latest), Arc::clone(&stop));
+        std::thread::spawn(move || {
+            while !flag.load(Ordering::Relaxed) {
+                let playing = query_playerctl();
+                *shared.lock() = playing;
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        });
+        Self { latest, stop }
+    }
+
+    fn latest(&self) -> Option<NowPlaying> {
+        self.latest.lock().clone()
+    }
+}
+
+impl Drop for PlayerWatcher {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Chooses the frame to show at any moment.
@@ -123,7 +179,7 @@ pub struct ScreenManager {
     temporary: Option<Timed>,
     system: System,
     stats: Option<(Instant, SystemStats)>,
-    playing: Option<(Instant, Option<NowPlaying>)>,
+    player: Option<PlayerWatcher>,
     width: u32,
     height: u32,
 }
@@ -136,7 +192,7 @@ impl ScreenManager {
             temporary: None,
             system: System::new(),
             stats: None,
-            playing: None,
+            player: None,
             width: oled::DEFAULT_WIDTH,
             height: oled::DEFAULT_HEIGHT,
         };
@@ -167,6 +223,7 @@ impl ScreenManager {
             }),
             _ => None,
         };
+        self.player = matches!(idle, IdleScreen::NowPlaying).then(PlayerWatcher::start);
         self.idle = idle;
         Ok(())
     }
@@ -199,7 +256,7 @@ impl ScreenManager {
             IdleScreen::Off => None,
             IdleScreen::Clock => Some(oled::clock(&chrono::Local::now())),
             IdleScreen::Stats => Some(oled::system_stats(&self.sample_stats(now))),
-            IdleScreen::NowPlaying => match self.sample_playing(now) {
+            IdleScreen::NowPlaying => match self.player.as_ref().and_then(PlayerWatcher::latest) {
                 Some(p) => Some(oled::now_playing(&p.title, &p.artist, p.progress)),
                 None => Some(oled::clock(&chrono::Local::now())),
             },
@@ -226,17 +283,6 @@ impl ScreenManager {
         };
         self.stats = Some((now, stats));
         stats
-    }
-
-    fn sample_playing(&mut self, now: Instant) -> Option<&NowPlaying> {
-        let stale = self
-            .playing
-            .as_ref()
-            .is_none_or(|(at, _)| now.duration_since(*at) >= Duration::from_secs(1));
-        if stale {
-            self.playing = Some((now, query_playerctl()));
-        }
-        self.playing.as_ref().and_then(|(_, p)| p.as_ref())
     }
 }
 

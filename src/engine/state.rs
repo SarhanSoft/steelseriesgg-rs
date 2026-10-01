@@ -48,6 +48,10 @@ pub struct DeviceRecord {
     /// `None` = follow the global lighting.
     #[serde(default)]
     pub lighting: Option<Lighting>,
+    /// Apply every stored setting on the next connect, including ones the device keeps itself
+    /// (set when a profile was loaded while the device was unplugged).
+    #[serde(default)]
+    pub reapply_all: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -65,6 +69,9 @@ pub struct EngineState {
     /// Run the Sonar-style audio mixer inside the daemon.
     #[serde(default)]
     pub mixer_enabled: bool,
+    /// Moments settings changed from the CLI or panel; overrides `[moments]` in config.toml.
+    #[serde(default)]
+    pub moments: Option<crate::moments::MomentsConfig>,
 }
 
 impl Default for EngineState {
@@ -76,6 +83,7 @@ impl Default for EngineState {
             active_profile: None,
             oled_idle: super::screen::IdleScreen::default(),
             mixer_enabled: false,
+            moments: None,
         }
     }
 }
@@ -114,7 +122,7 @@ impl EngineState {
             std::fs::create_dir_all(parent)?;
         }
         let text = serde_json::to_string_pretty(self)?;
-        crate::fs_utils::secure_write(&path, text)
+        crate::fs_utils::secure_write_atomic(&path, text)
     }
 
     pub fn record_mut(&mut self, key: &str, name: &str) -> &mut DeviceRecord {
