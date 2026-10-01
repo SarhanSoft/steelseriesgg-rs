@@ -25,6 +25,7 @@ pub mod fs_utils;
 pub mod gamesense;
 pub mod moments;
 pub mod notify;
+pub mod oled;
 pub mod performance;
 pub mod pollrate;
 pub mod profiles;

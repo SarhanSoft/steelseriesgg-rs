@@ -2,6 +2,7 @@
 
 pub mod apex;
 pub mod apex_pro_tkl_2023;
+pub mod oled;
 
 use super::diagnostics::{HidOperation, with_global_diagnostics};
 use super::hid_reports::{
@@ -206,6 +207,27 @@ pub trait Keyboard: Device {
         Err(Error::DeviceCommunication(
             "Setting actuation point not supported".to_string(),
         ))
+    }
+
+    // === OLED screen ===
+
+    /// `(width, height)` in pixels of this keyboard's OLED screen, or `None` when it has none.
+    ///
+    /// How far the screen's protocol can be trusted differs per model; see
+    /// [`oled::oled_verification_for_product_id`].
+    fn oled_size(&self) -> Option<(u32, u32)> {
+        None
+    }
+
+    /// Show `frame` on the OLED screen. `[EXPERIMENTAL]`, see [`oled`].
+    ///
+    /// The frame must match [`oled_size`](Self::oled_size). It stays on screen until replaced:
+    /// no reference documents a command that hands the screen back to the keyboard's own UI.
+    async fn draw_oled(&mut self, _frame: &crate::oled::OledFrame) -> Result<()> {
+        Err(Error::Unsupported(format!(
+            "OLED drawing is not supported for this keyboard (PID {:#06x})",
+            self.info().product_id
+        )))
     }
 }
 
@@ -914,6 +936,16 @@ impl Keyboard for GenericKeyboard {
                 "Reading actuation point not yet implemented - HID read command not discovered and no cached value available. Hint: the actuation point can currently only be retrieved if it was set earlier in this session; cache the value you set instead of relying on reading it back.".to_string(),
             ))
         }
+    }
+
+    // === OLED screen ===
+
+    fn oled_size(&self) -> Option<(u32, u32)> {
+        oled::oled_size_for_product_id(self.info.product_id)
+    }
+
+    async fn draw_oled(&mut self, frame: &crate::oled::OledFrame) -> Result<()> {
+        oled::draw_frame(&self.info, frame).await
     }
 }
 

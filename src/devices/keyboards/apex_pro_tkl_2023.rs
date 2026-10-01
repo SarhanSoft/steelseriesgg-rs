@@ -387,6 +387,16 @@ crate::impl_keyboard_with_delegation!(ApexProTkl2023, {
     fn set_actuation_point_mm(&mut self, mm: f32) -> Result<()> {
         self.set_actuation_point_mm(mm)
     }
+
+    fn oled_size(&self) -> Option<(u32, u32)> {
+        self.inner.oled_size()
+    }
+
+    // The OLED path sends raw feature reports to the screen's own interface, so it also works
+    // in the wireless raw-only mode (no hidapi handle) and needs no 0x4B init.
+    async fn draw_oled(&mut self, frame: &crate::oled::OledFrame) -> Result<()> {
+        self.inner.draw_oled(frame).await
+    }
 });
 
 // Deref allows access to Device trait methods like send_raw/receive_raw

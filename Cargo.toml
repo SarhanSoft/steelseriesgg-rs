@@ -53,6 +53,9 @@ directories = "6.0.0"
 
 # Control API token
 getrandom = "0.4"
+# Image decoding for the keyboard OLED screen (src/oled). Only the four formats users are
+# likely to hand us; default features would pull in AVIF/EXR/TIFF/WebP decoders and rayon.
+image = { version = "0.25.10", default-features = false, features = ["png", "gif", "jpeg", "bmp"] }
 
 # Terminal UI
 indicatif = "0.18.6"
