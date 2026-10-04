@@ -105,9 +105,15 @@ jobs:
         run: |
           rm -f ssgg-debug-*.pkg.tar.zst
           mv ssgg-[0-9]*-x86_64.pkg.tar.zst ssgg-linux-x86_64.pkg.tar.zst
+      - name: Package generic Linux tarball (binary + udev rules + service + desktop entry)
+        run: |
+          mkdir -p ssgg-linux-x86_64
+          cp src/target/release/ssgg ssgg-linux-x86_64/
+          cp assets/70-steelseries.rules assets/ssgg-uinput.conf assets/ssgg.service assets/ssgg.desktop README.md LICENSE ssgg-linux-x86_64/
+          tar -czf ssgg-linux-x86_64.tar.gz ssgg-linux-x86_64
       - name: Compute SHA-256
         run: |
-          sha256sum ssgg-linux-x86_64.pkg.tar.zst > sha256sums-linux.txt
+          sha256sum ssgg-linux-x86_64.pkg.tar.zst ssgg-linux-x86_64.tar.gz > sha256sums-linux.txt
           cat sha256sums-linux.txt
       - name: Upload to release
         env:
@@ -115,6 +121,7 @@ jobs:
         run: |
           gh release upload "${{ needs.create-tag.outputs.tag_name || needs.release-please.outputs.tag_name }}" \
             ssgg-linux-x86_64.pkg.tar.zst \
+            ssgg-linux-x86_64.tar.gz \
             sha256sums-linux.txt \
             --clobber
 
