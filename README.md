@@ -282,8 +282,7 @@ cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 ```
 
-Module guides live in [`docs/development/`](docs/development/) and the agent handbook in
-[`AGENTS.md`](AGENTS.md).
+Module guides live in [`docs/development/`](docs/development/).
 
 ## License
 

@@ -57,5 +57,8 @@ apexctl/
 *.etl
 *.etl.csv
 
-# Agent worktrees (local only)
-.claude/worktrees/
+# AI assistant files stay local
+.claude/
+CLAUDE.md
+AGENTS.md
+.mcp.json
