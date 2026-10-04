@@ -10,6 +10,11 @@ settings and lighting (Engine), a Sonar-style audio mixer, GameSense for games, 
 key bindings and macros, per-game profiles, instant-replay clips (Moments), and a control
 panel in the browser.
 
+> **About this fork.** This is [SarhanSoft/steelseriesgg-rs](https://github.com/SarhanSoft/steelseriesgg-rs),
+> a fork of [Ven0m0/steelseriesgg-rs](https://github.com/Ven0m0/steelseriesgg-rs) that adds the
+> full GG feature set for Linux. It is an independent community project, not affiliated with or
+> endorsed by SteelSeries.
+
 > **Hardware status.** Only the Apex Pro TKL (2023) was ever tested on real hardware by this
 > project. Every other protocol comes from a published open-source driver (OpenRGB, rivalcfg,
 > HeadsetControl, apex-tux, nova-chatmix-linux) and is pinned by unit tests, but has not been
@@ -19,7 +24,7 @@ panel in the browser.
 ## Quickstart
 
 ```bash
-git clone https://github.com/Ven0m0/steelseriesgg-rs.git
+git clone https://github.com/SarhanSoft/steelseriesgg-rs.git
 cd steelseriesgg-rs
 cargo build --release
 sudo install -Dm644 assets/70-steelseries.rules /etc/udev/rules.d/70-steelseries.rules
