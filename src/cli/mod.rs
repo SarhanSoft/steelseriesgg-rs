@@ -396,8 +396,21 @@ pub async fn moments(command: Command) -> Result<()> {
     Ok(())
 }
 
-/// `ssgg ui` — open the control panel of the running daemon in a browser.
+/// `ssgg ui` — open the desktop app when installed, else the control panel in a browser.
 pub async fn open_ui() -> Result<()> {
+    let app = std::env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            exe.parent()
+                .map(|dir| dir.join(if cfg!(windows) { "ssgg-gui.exe" } else { "ssgg-gui" }))
+        })
+        .filter(|path| path.is_file());
+    if let Some(app) = app
+        && std::process::Command::new(&app).spawn().is_ok()
+    {
+        println!("Opened the SteelSeries GG app.");
+        return Ok(());
+    }
     let Some((info, ticket)) = control::issue_ticket().await? else {
         return Err(Error::Other(
             "the daemon is not running; start it with `systemctl --user start ssgg` (or `ssgg daemon`)".to_string(),

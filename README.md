@@ -27,20 +27,33 @@ panel in the browser.
 git clone https://github.com/SarhanSoft/steelseriesgg-rs.git
 cd steelseriesgg-rs
 cargo build --release
+cargo build --release --features gui --bin ssgg-gui   # desktop app; needs libwebkit2gtk-4.1-dev
 sudo install -Dm644 assets/70-steelseries.rules /etc/udev/rules.d/70-steelseries.rules
 sudo udevadm control --reload-rules && sudo udevadm trigger   # then replug your devices
 ./target/release/ssgg devices
 ```
 
+### Desktop app
+
+Open **SteelSeries GG** from your application menu (or run `ssgg-gui`). The window starts the
+background service when it is not running and shows the full control panel: devices,
+lighting, audio mixer, key bindings, profiles, OLED screen and Moments. It needs WebKitGTK 4.1
+(Arch `webkit2gtk-4.1`, Debian/Ubuntu `libwebkit2gtk-4.1-0`, Fedora `webkit2gtk4.1`).
+Everything is also available from the command line below.
+
+### Background service
+
 Run the background service (hot-plug, animations, battery alerts, GameSense, mixer, bindings):
 
 ```bash
-sudo install -Dm755 target/release/ssgg /usr/local/bin/ssgg
+sudo install -Dm755 target/release/ssgg target/release/ssgg-gui /usr/local/bin/
+sudo install -Dm644 assets/ssgg.desktop /usr/share/applications/ssgg.desktop
+sudo sed -i 's|Exec=ssgg-gui|Exec=/usr/local/bin/ssgg-gui|' /usr/share/applications/ssgg.desktop
 install -Dm644 assets/ssgg.service ~/.config/systemd/user/ssgg.service
 sed -i 's|/usr/bin/ssgg|/usr/local/bin/ssgg|' ~/.config/systemd/user/ssgg.service
 systemctl --user daemon-reload
 systemctl --user enable --now ssgg
-ssgg ui          # opens the control panel
+ssgg ui          # opens the desktop app (or the panel in a browser)
 ```
 
 ## What it does, next to GG on Windows

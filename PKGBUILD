@@ -3,14 +3,14 @@
 # shell: bash
 # shellcheck disable=SC2034,SC2154
 pkgname=ssgg
-pkgver=0.2.0 # x-release-please-version
+pkgver=0.3.0 # x-release-please-version
 pkgrel=1
 pkgdesc="A complete open-source SteelSeries GG replacement for Linux - RGB lighting, audio mixer, and GameSense support"
 arch=('x86_64')
 url="https://github.com/Ven0m0/steelseriesgg-rs"
 license=('MIT')
 # hidapi is not a dependency: the Linux build uses hidapi's pure-Rust hidraw backend.
-depends=('glibc' 'gcc-libs' 'systemd')
+depends=('glibc' 'gcc-libs' 'systemd' 'webkit2gtk-4.1' 'gtk3')
 makedepends=('rust')
 optdepends=(
   'pipewire: Sonar-style audio mixer (virtual Game/Chat/Media/Aux/Mic devices)'
@@ -66,6 +66,7 @@ build() {
   export CARGO_HOME="$srcdir/cargo-home"
   export CARGO_TARGET_DIR="$srcdir/target"
   cargo build -r --frozen --bin ssgg
+  cargo build -r --frozen --features gui --bin ssgg-gui
 }
 
 check() {
@@ -78,6 +79,7 @@ check() {
 package() {
   cd "$(_resolve_archive_dir)" || return 1
   install -Dm755 "$srcdir/target/release/ssgg" "$pkgdir/usr/bin/ssgg"
+  install -Dm755 "$srcdir/target/release/ssgg-gui" "$pkgdir/usr/bin/ssgg-gui"
   install -Dm644 assets/ssgg.service "$pkgdir/usr/lib/systemd/user/ssgg.service"
   install -Dm644 assets/70-steelseries.rules "$pkgdir/usr/lib/udev/rules.d/70-steelseries.rules"
   install -Dm644 assets/ssgg-uinput.conf "$pkgdir/usr/lib/modules-load.d/ssgg-uinput.conf"

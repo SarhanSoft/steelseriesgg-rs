@@ -1,6 +1,6 @@
 [package]
 name = "steelseries-gg-linux"
-version = "0.2.0"
+version = "0.3.0"
 description = "A complete open-source SteelSeries GG replacement for Linux - RGB lighting, audio mixer, and GameSense support"
 repository = "https://github.com/Ven0m0/steelseriesgg-rs"
 readme = "README.md"
@@ -28,8 +28,15 @@ name = "sonar_control"
 path = "src/bin/sonar_control.rs"
 required-features = ["sonar"]
 
+[[bin]]
+name = "ssgg-gui"
+path = "src/bin/ssgg-gui.rs"
+required-features = ["gui"]
+
 [features]
 default = []
+# Desktop app window (WebKitGTK on Linux, WebView2 on Windows).
+gui = ["dep:wry", "dep:tao"]
 audio = ["dep:libpulse-binding"]
 sonar = ["dep:reqwest"]
 experimental-apex-2023 = []
@@ -53,6 +60,10 @@ directories = "6.0.0"
 
 # Control API token
 getrandom = "0.4"
+
+# Desktop app window (feature `gui`)
+tao = { version = "0.37", optional = true }
+wry = { version = "0.57", optional = true }
 # Image decoding for the keyboard OLED screen (src/oled). Only the four formats users are
 # likely to hand us; default features would pull in AVIF/EXR/TIFF/WebP decoders and rayon.
 image = { version = "0.25.10", default-features = false, features = ["png", "gif", "jpeg", "bmp"] }
